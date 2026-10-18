@@ -12,7 +12,7 @@ import {
   projectOnlinePresenceViewers,
   profilePresenceViewer,
 } from "../lib/presence-users.ts";
-import { t } from "../lib/reactive/i18n.ts";
+import { i18nRevision, t } from "../lib/reactive/i18n.ts";
 import type { AppSidebarRenderHost } from "./app-sidebar-render.tsx";
 import { personActivityLink, personActivityRouting } from "./person-activity-link.ts";
 import { sidebarOnlineCountFor, SidebarOnlineOrder } from "./sidebar-online-order.ts";
@@ -77,9 +77,10 @@ export function renderAppSidebarOnline(host: AppSidebarRenderHost): JSX.Element 
   const counts = () => online().counts;
   const listUsers = () => online().listUsers;
   const filtered = createMemo(() => host.people.statusFilter === "running");
+  const basePath = createMemo(() => host.basePath);
   const routing = createMemo(() =>
     personActivityRouting(
-      { basePath: host.basePath, navigate: (route, options) => host.onNavigate?.(route, options) },
+      { basePath: basePath(), navigate: (route, options) => host.onNavigate?.(route, options) },
       () => host.dismissTransientMenus(),
     ),
   );
@@ -160,8 +161,12 @@ export function renderAppSidebarOnline(host: AppSidebarRenderHost): JSX.Element 
                     running: String(workload()!.running),
                   })
                 : t("presence.sessions.unavailable");
-            const activity = () =>
-              personActivityLink(user().identity?.id, routing(), presenceViewerLabel(user()));
+            const personId = createMemo(() => user().identity?.id);
+            const label = createMemo(() => {
+              i18nRevision();
+              return presenceViewerLabel(user());
+            });
+            const activity = createMemo(() => personActivityLink(personId(), routing(), label()));
 
             return (
               <div
@@ -194,7 +199,7 @@ export function renderAppSidebarOnline(host: AppSidebarRenderHost): JSX.Element 
                   aria-haspopup="dialog"
                   aria-expanded="false"
                   aria-label={t(activity() ? "presence.card.ariaLabel" : "presence.card.details", {
-                    name: presenceViewerLabel(user()),
+                    name: label(),
                   })}
                 >
                   <span class="sidebar-online__avatar" aria-hidden="true">
@@ -204,7 +209,7 @@ export function renderAppSidebarOnline(host: AppSidebarRenderHost): JSX.Element 
                       variant="footer"
                     />
                   </span>
-                  <span class="sidebar-online__person-name">{presenceViewerLabel(user())}</span>
+                  <span class="sidebar-online__person-name">{label()}</span>
                   {workload() && (workload()!.open > 0 || workload()!.running > 0) ? (
                     <span class="sidebar-online__counts" aria-hidden="true">
                       <For each={["running", "open"] as const}>

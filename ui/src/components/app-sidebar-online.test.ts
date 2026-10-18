@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { SessionsListParamsSchema } from "../../../packages/gateway-protocol/src/schema/sessions-list.js";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import type { PresenceEntry, SessionsListResult } from "../api/types.ts";
+import * as activityRoutes from "../app-route-paths.ts";
 import { createConnectionBootstrapCoordinator } from "../app/connection-bootstrap.ts";
 import { createSessionCapability } from "../lib/sessions/index.ts";
 import {
@@ -259,6 +260,28 @@ describe("sidebar people workload", () => {
     await settle(sidebar);
     expect(update).toHaveBeenCalledOnce();
     expect(sidebar.querySelector("[data-viewer-id='bea']")).not.toBeNull();
+  });
+
+  it("retains person links across transcript publications and other people's presence changes", async () => {
+    const { sidebar, gateway } = await mountWorkload();
+    const location = vi.spyOn(activityRoutes, "activityPersonLocation");
+    const ada = person(sidebar, "ada");
+    const href = ada.getAttribute("href");
+    for (let index = 0; index < 3; index += 1) {
+      gateway.publish({ sessionKey: "agent:main:visible" });
+      await settle(sidebar);
+    }
+    gateway.publishEvent("presence", {
+      presence: presence().map((entry) =>
+        entry.user?.id === "bea" ? { ...entry, user: { ...entry.user, name: "Beatrice" } } : entry,
+      ),
+    });
+    await settle(sidebar);
+    expect(person(sidebar, "ada")).toBe(ada);
+    expect(ada.getAttribute("href")).toBe(href);
+    expect(location.mock.calls.filter(([, , label]) => label === "ada")).toHaveLength(0);
+    expect(location.mock.calls.filter(([, , label]) => label === "Beatrice")).toHaveLength(1);
+    expect(person(sidebar, "Beatrice").getAttribute("aria-label")).toContain("Beatrice");
   });
 
   it.each([false, true])(
