@@ -33,6 +33,7 @@ import {
   extractAssistantPhaseText,
   extractAssistantTextForPhase,
 } from "../../shared/chat-message-content.js";
+import { createDeferredCore } from "../../shared/deferred.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
 import { isToolHistoryBlockType } from "../chat-display-projection.canvas.js";
 import { projectChatDisplayMessage } from "../chat-display-projection.js";
@@ -84,6 +85,8 @@ export function createChatSendReplyDispatch(params: {
   isAgentRunStarted: () => boolean;
   onCommandBlock?: (text: string) => void;
   isRunCurrent?: () => boolean;
+  /** Keeps the run's source registered until post-turn media persistence settles. */
+  retainSourceWork?: (work: Promise<void>) => void;
   abortSignal?: AbortSignal;
   assertWorkCurrent?: () => void;
   getReplyDispatchRun?: () => ReplyDispatchRun | undefined;
@@ -316,6 +319,22 @@ export function createChatSendReplyDispatch(params: {
       return `index:${metadata.assistantMessageIndex}`;
     }
     return "unkeyed";
+  };
+  // Media persistence finishes after the turn releases its claim. Retain the source from the
+  // first media delivery until that persistence settles, so the run stays current for it.
+  let mediaFinalizationOpen = false;
+  let mediaFinalizationCustody: ReturnType<typeof createDeferredCore> | undefined;
+  const retainMediaFinalization = (payload: ReplyPayload) => {
+    if (
+      !mediaFinalizationOpen ||
+      mediaFinalizationCustody ||
+      !isAgentRunStarted() ||
+      !needsAgentMediaTranscriptFinalization(payload)
+    ) {
+      return;
+    }
+    mediaFinalizationCustody = createDeferredCore();
+    params.retainSourceWork?.(mediaFinalizationCustody.promise);
   };
   const appendWebchatAgentMediaTranscriptIfNeeded = async (input: ReplyDispatchOperation) => {
     const payload = readChatSendReplyPayload(input);
@@ -552,6 +571,7 @@ export function createChatSendReplyDispatch(params: {
     switch (info.kind) {
       case "block":
       case "final":
+        retainMediaFinalization(payload);
         deliveredReplies.push({ input, kind: info.kind });
         if (
           info.kind === "block" &&
@@ -579,6 +599,7 @@ export function createChatSendReplyDispatch(params: {
       case "tool":
         // TTS tool media becomes a final payload so downstream audio extraction sees it.
         if (isMediaBearingPayload(payload)) {
+          retainMediaFinalization(payload);
           const mediaPayload = copyReplyPayloadMetadata(payload, { ...payload, text: undefined });
           deliveredReplies.push(
             ...replaceChatSendReplyPayload(input, mediaPayload).map((mediaInput) => ({
@@ -620,6 +641,7 @@ export function createChatSendReplyDispatch(params: {
     operation: () => Promise<T>,
   ): Promise<T> => {
     return await admission.run(async () => {
+      mediaFinalizationOpen = true;
       try {
         return await commentaryMedia.run(operation);
       } finally {
@@ -633,7 +655,12 @@ export function createChatSendReplyDispatch(params: {
         }
         // Stay inside the session admission after the runtime owner unwinds; callers chain
         // post-dispatch persistence from this Promise, and finalizer errors stay best-effort.
-        await finalizeAgentMediaTranscript();
+        try {
+          await finalizeAgentMediaTranscript();
+        } finally {
+          mediaFinalizationOpen = false;
+          mediaFinalizationCustody?.resolve();
+        }
       }
     });
   };

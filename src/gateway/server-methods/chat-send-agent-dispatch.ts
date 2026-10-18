@@ -21,6 +21,7 @@ import {
 } from "../../infra/diagnostics-timeline.js";
 import { withExecRequestTurn } from "../../infra/exec-request-context.js";
 import { isProgressCardRefreshInputProvenance } from "../../sessions/input-provenance.js";
+import { trackSessionControllerSourceWork } from "../../sessions/session-controller.mailbox.js";
 import {
   getRpcSourceIdentity,
   isRpcSourceActive,
@@ -145,6 +146,7 @@ export function startChatDispatch(params: StartChatDispatchParams): Promise<void
     prepareAssistantTranscriptMessage: params.prepareAssistantTranscriptMessage,
     isAgentRunStarted: () => agentRunStarted,
     isRunCurrent,
+    retainSourceWork: (work) => trackSessionControllerSourceWork(activeRunAbort.entry.input, work),
     abortSignal: activeRunAbort.controller.signal,
     onCommandBlock: isInternalTextSlashCommandTurn
       ? (text) =>
