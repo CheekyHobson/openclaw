@@ -11,7 +11,9 @@ it("bounds calendar formatter construction across newly mounted history rows", (
   const Native = Intl.DateTimeFormat;
   const configured: Intl.DateTimeFormatOptions[] = [];
   vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function (locales, options) {
-    if (options) configured.push(options);
+    if (options) {
+      configured.push(options);
+    }
     return new Native(locales ?? "en-GB-u-hc-h23", options);
   });
   const legacyDateTime = vi.spyOn(Date.prototype, "toLocaleString");
