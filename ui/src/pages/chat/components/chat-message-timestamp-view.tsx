@@ -11,6 +11,15 @@ registerEnglishCatalog(registerChatMessageMetadataEnglish);
 const CHAT_RELATIVE_TIMESTAMP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const CHAT_RELATIVE_TIMESTAMP_FUTURE_SKEW_MS = 2 * 60 * 1000;
 
+type TimestampFormat = "label" | "title" | "date" | "year";
+let timestampFormatters:
+  | {
+      locale: string;
+      timeZone: string;
+      formats: Partial<Record<TimestampFormat, Intl.DateTimeFormat>>;
+    }
+  | undefined;
+
 // Shared relative-time copy is lowercase for mid-sentence use ("Updated just now");
 // the chat footer shows it alone, so it starts with a capital ("Just now").
 function capitalizeStandaloneLabel(value: string): string {
@@ -19,19 +28,44 @@ function capitalizeStandaloneLabel(value: string): string {
 
 function prepareTimestamp(timestamp: number) {
   const date = new Date(timestamp);
-  const valid = Number.isFinite(date.getTime());
-  const label = valid
-    ? date.toLocaleString([], {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        timeZoneName: "short",
-      })
-    : t("chat.messages.unknownDate");
-  const title = valid
-    ? date.toLocaleString([], {
+  if (!Number.isFinite(date.getTime())) {
+    const label = t("chat.messages.unknownDate");
+    return { dateTime: "", label, title: label, relativeLabel: label };
+  }
+  // A tab can outlive an OS time-zone change; retain only the current browser defaults.
+  const { locale, timeZone } = Intl.DateTimeFormat().resolvedOptions();
+  if (timestampFormatters?.locale !== locale || timestampFormatters.timeZone !== timeZone) {
+    timestampFormatters = { locale, timeZone, formats: {} };
+  }
+  const formats = timestampFormatters.formats;
+  const format = (kind: TimestampFormat, options: Intl.DateTimeFormatOptions) =>
+    (formats[kind] ??= new Intl.DateTimeFormat(locale, { ...options, timeZone })).format(date);
+  const label = format("label", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  const nowMs = Date.now();
+  const ageMs = nowMs - date.getTime();
+  const sameYear = date.getFullYear() === new Date(nowMs).getFullYear();
+  // Slightly-future messages clamp to "Just now"; older or distant-future ones use a date.
+  const relativeLabel =
+    ageMs >= -CHAT_RELATIVE_TIMESTAMP_FUTURE_SKEW_MS && ageMs < CHAT_RELATIVE_TIMESTAMP_MAX_AGE_MS
+      ? capitalizeStandaloneLabel(formatTimeAgo(Math.max(0, ageMs)))
+      : format(sameYear ? "date" : "year", {
+          month: "short",
+          day: "numeric",
+          ...(sameYear ? {} : { year: "numeric" }),
+        });
+  return {
+    dateTime: date.toISOString(),
+    label,
+    relativeLabel,
+    get title() {
+      return format("title", {
         weekday: "long",
         month: "long",
         day: "numeric",
@@ -40,21 +74,9 @@ function prepareTimestamp(timestamp: number) {
         minute: "2-digit",
         second: "2-digit",
         timeZoneName: "short",
-      })
-    : label;
-  const nowMs = Date.now();
-  const ageMs = nowMs - date.getTime();
-  // Slightly-future messages clamp to "Just now"; older or distant-future ones use a date.
-  const relativeLabel = !valid
-    ? label
-    : ageMs >= -CHAT_RELATIVE_TIMESTAMP_FUTURE_SKEW_MS && ageMs < CHAT_RELATIVE_TIMESTAMP_MAX_AGE_MS
-      ? capitalizeStandaloneLabel(formatTimeAgo(Math.max(0, ageMs)))
-      : date.toLocaleDateString([], {
-          month: "short",
-          day: "numeric",
-          ...(date.getFullYear() === new Date(nowMs).getFullYear() ? {} : { year: "numeric" }),
-        });
-  return { dateTime: valid ? date.toISOString() : "", label, title, relativeLabel };
+      });
+    },
+  };
 }
 
 function TimestampTime(props: { view: ReturnType<typeof prepareTimestamp> }) {
@@ -69,7 +91,10 @@ function TimestampTime(props: { view: ReturnType<typeof prepareTimestamp> }) {
 
 export function ChatTimestamp(props: { timestamp: number; metadata?: JSX.Element[] }) {
   const view = createMemo(() => prepareTimestamp(props.timestamp));
-  const contextLabel = createMemo(() => t("chat.messages.contextFor", { timestamp: view().title }));
+  const contextLabel = createMemo(
+    () => t("chat.messages.contextFor", { timestamp: view().title }),
+    { lazy: true },
+  );
   const hasMetadata = () => Boolean(props.metadata?.length);
   return (
     <openclaw-tooltip
