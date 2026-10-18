@@ -114,4 +114,37 @@ describe("native composer end anchoring", () => {
     expect(readContent).not.toHaveBeenCalled();
     expect(element.scrollTop).toBe(200);
   });
+
+  it.each(["uncaptured", "cleared", "departed"])(
+    "does not measure resize maintenance for a %s end anchor",
+    (state) => {
+      const { element, anchor, readHeight, readContent } = fixture();
+      if (state !== "uncaptured") {
+        anchor.capture(element);
+        if (state === "cleared") {
+          anchor.clear();
+        } else {
+          element.scrollTop = 200;
+        }
+      }
+      readHeight.mockClear();
+      readContent.mockClear();
+      expect(anchor.isResizeAnchor(element)).toBe(false);
+      expect(anchor.isResizeAnchor(element)).toBe(false);
+      expect(readHeight).not.toHaveBeenCalled();
+      expect(readContent).not.toHaveBeenCalled();
+    },
+  );
+
+  it("detects current resize geometry while the reader stays at the captured end", () => {
+    const { element, anchor, resize } = fixture();
+    anchor.capture(element);
+    expect(anchor.isResizeAnchor(element)).toBe(false);
+    resize(300);
+    expect(anchor.isResizeAnchor(element)).toBe(true);
+    resize(400);
+    expect(anchor.isResizeAnchor(element)).toBe(false);
+    resize(0);
+    expect(anchor.isResizeAnchor(element)).toBe(false);
+  });
 });
