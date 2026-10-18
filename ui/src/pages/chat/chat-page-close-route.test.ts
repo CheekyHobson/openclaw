@@ -30,10 +30,12 @@ import {
   setNavigationContext,
   stubMatchMedia,
 } from "./chat-page.test-support.ts";
-import { ChatPage } from "./chat-page.ts";
+import "./chat-page.ts";
 import type { ChatRouteData } from "./route-loader.ts";
 import { ChatRouteView } from "./route-view.tsx";
 import type { SessionChatRouteData } from "./session-route-data.ts";
+
+type ChatPage = HTMLElementTagNameMap["openclaw-chat-page"];
 
 type RenderedPane = HTMLElement & {
   active: boolean;
@@ -128,7 +130,7 @@ describe("chat page close navigation", () => {
   });
 
   it("preserves a pending Home draft when its bound pane adopts the global wire key after collapsing", async () => {
-    const page = new ChatPage();
+    const page = document.createElement("openclaw-chat-page");
     const { context, navigate, replace } = setNavigationContext(page);
     context.agents.state.agentsList = {
       defaultId: "main",
@@ -181,7 +183,7 @@ describe("chat page close navigation", () => {
             .pathname,
           "synthetic session path",
         );
-      const page = new ChatPage();
+      const page = document.createElement("openclaw-chat-page");
       const { context, replace } = setNavigationContext(page);
       const entered = createDeferred();
       const release = createDeferred<SessionChatRouteData>();
@@ -319,7 +321,7 @@ describe("chat page close navigation", () => {
   );
 
   it("keeps a saved singleton's pane identity after explicit route admission", async () => {
-    const page = new ChatPage();
+    const page = document.createElement("openclaw-chat-page");
     setNavigationContext(page);
     page.data = { sessionKey: "agent:main:previous" };
     patchSettings({

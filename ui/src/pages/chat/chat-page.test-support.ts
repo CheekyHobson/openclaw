@@ -8,10 +8,11 @@ import type { ApplicationGatewaySnapshot } from "../../app/gateway.ts";
 import { createGatewayHarness } from "../../lib/sessions/session-capability.test-support.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { createChatPageSessions } from "./chat-page-sessions.test-support.ts";
-import type { ChatPage } from "./chat-page.ts";
 import type { ChatSplitLayout } from "./split-layout-types.ts";
 import { insertPane } from "./split-layout.ts";
 import "./chat-page.ts";
+
+type ChatPage = HTMLElementTagNameMap["openclaw-chat-page"];
 
 export { createChatPageSessions } from "./chat-page-sessions.test-support.ts";
 

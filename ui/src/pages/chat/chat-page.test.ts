@@ -36,7 +36,7 @@ import {
   setViewerPresenceContext,
   stubMatchMedia,
 } from "./chat-page.test-support.ts";
-import { ChatPage } from "./chat-page.ts";
+import "./chat-page.ts";
 import { loadChatRoute } from "./route-loader.ts";
 
 const WORK_SESSION_KEY = "agent:main:dashboard:12345678-90ab-cdef-1234-567890abcdef";
@@ -51,6 +51,8 @@ const sessionPath = (sessionKey: string) =>
   sessionNavigationTarget({ face: "chat", sessionKey, fallbackAgentId: "main" }).options.pathname;
 import type { ChatMessageCache } from "./session-message-cache.ts";
 import { setPaneSession } from "./split-layout.ts";
+
+type ChatPage = HTMLElementTagNameMap["openclaw-chat-page"];
 
 type RenderedPane = HTMLElement & {
   paneId: string;
@@ -90,7 +92,7 @@ async function mountPage(
   data: ChatPage["data"] = { sessionKey: "main" },
   layout?: ReturnType<typeof createSplitLayout>,
 ) {
-  const page = new ChatPage();
+  const page = document.createElement("openclaw-chat-page");
   const navigation = setNavigationContext(page);
   page.data = data;
   if (layout) {
@@ -177,7 +179,11 @@ describe("chat page split layout host", () => {
       container.className = onboarding ? "shell shell--onboarding" : "shell";
       const { context } = createChatPageNavigationContext();
       const view = mountSolid(
-        () => Object.assign(new ChatPage(), { context, data: { sessionKey: "main" } }),
+        () =>
+          Object.assign(document.createElement("openclaw-chat-page"), {
+            context,
+            data: { sessionKey: "main" },
+          }),
         { container },
       );
       try {
@@ -407,7 +413,7 @@ describe("chat page split layout host", () => {
 
   it("replaces into the canonical face namespace without adding history", async () => {
     window.history.replaceState({}, "", "/chat");
-    const page = new ChatPage();
+    const page = document.createElement("openclaw-chat-page");
     const navigation = setNavigationContext(page);
     // The loader resolved this session to its stored dashboard face while the route was
     // matched under /chat, so the replacement has to be routed by the resolved face.
@@ -439,7 +445,7 @@ describe("chat page split layout host", () => {
   it("keeps catalog identity when consuming a route draft", async () => {
     const expectedSearch = catalogSessionSearch(CATALOG_KEY);
     window.history.replaceState({}, "", `/chat/research${expectedSearch}&draft=ship`);
-    const page = new ChatPage();
+    const page = document.createElement("openclaw-chat-page");
     const navigation = setNavigationContext(page);
     page.data = {
       sessionKey: CATALOG_SESSION_KEY,
@@ -466,7 +472,7 @@ describe("chat page split layout host", () => {
 
   it("preserves a resolved long prefix through drafts and face changes", async () => {
     window.history.replaceState({}, "", "/chat/main/1234567890?draft=ship");
-    const page = new ChatPage();
+    const page = document.createElement("openclaw-chat-page");
     const navigation = setNavigationContext(page);
     page.data = {
       sessionKey: WORK_SESSION_KEY,
@@ -490,7 +496,7 @@ describe("chat page split layout host", () => {
   it("passes an empty session key while route data is still unresolved", async () => {
     // Regression: a fabricated fallback key here made the pane canonicalize
     // against it and skip gateway startup entirely (chat.startup never sent).
-    const page = new ChatPage();
+    const page = document.createElement("openclaw-chat-page");
     setNavigationContext(page);
     document.body.append(page);
     await settleChatPage(page);
@@ -595,7 +601,7 @@ describe("chat page split layout host", () => {
   );
 
   it("declares split panes, session switches, pane closes, and page disposal", async () => {
-    const page = new ChatPage();
+    const page = document.createElement("openclaw-chat-page");
     const { request } = setViewerPresenceContext(page);
     const expectPresence = (sessionKeys: string[]) =>
       expect(request).toHaveBeenLastCalledWith(
@@ -690,7 +696,7 @@ describe("chat page split layout host", () => {
   });
 
   it("does not reuse a sibling's drop indicator over an unbound target", async () => {
-    const page = new ChatPage();
+    const page = document.createElement("openclaw-chat-page");
     page.data = { sessionKey: "main" };
     setNavigationContext(page);
     const layout = setPaneSession(createSplitLayout("main"), "p1", "global");
