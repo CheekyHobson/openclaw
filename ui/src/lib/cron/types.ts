@@ -150,5 +150,6 @@ export type CronState<Row = CronJob> = CronJobsState<Row> & {
   cronRunsStatusFilter: CronRunsStatusFilter;
   cronRunsQuery: string;
   cronRunsSortDir: CronSortDir;
+  cronRunsSortBy?: "time" | "status";
   cronBusy: boolean;
 };

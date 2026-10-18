@@ -12,6 +12,7 @@ export type CronProps = Omit<
     channelLabels?: Record<string, string>;
     channelMeta?: ChannelUiMetaEntry[];
     highlightedRunId?: string | null;
+    runsSortBy?: "time" | "status";
   };
 
 export type CronPanelMode = "overview" | "create" | "job";
