@@ -71,6 +71,13 @@ vi.mock("./openclaw-state-lease-storage.js", () => ({
     execute?.(),
   releaseOpenClawStateLease: storage.forbidden,
 }));
+// mock-isolation: Fail worker construction before the lease callback can enter.
+vi.mock("./openclaw-state-lease-heartbeat.js", () => ({
+  startOpenClawStateLeaseHeartbeat: () => {
+    storage.unavailable = true;
+    throw new Error("Synthetic heartbeat startup failed");
+  },
+}));
 
 afterEach(async () => {
   storage.unavailable = false;
@@ -79,23 +86,31 @@ afterEach(async () => {
   expect(storage.forbidden).not.toHaveBeenCalled();
 });
 
-it("releases a failed native lease cleanup when the shared resource owner closes", async () => {
-  const options = {
-    scope: "core:plugin-lifecycle",
-    key: "global",
-    database: { scope: "shared" as const },
-    leaseMs: 60_000,
-    waitMs: 0,
-    processBound: true,
-  };
-  await expect(
-    withOpenClawStateLease(options, async () => {
-      await closeOpenClawStateDatabaseAsync();
-      storage.unavailable = true;
-      throw new Error("Synthetic operation lost maintenance admission");
-    }),
-  ).rejects.toThrow("State lease operation and cleanup failed");
-  storage.unavailable = false;
-  await closeOpenClawStateDatabaseAsync();
-  await expect(withOpenClawStateLease(options, async () => "recovered")).resolves.toBe("recovered");
-});
+it.for(["operation", "startup"] as const)(
+  "releases a failed native lease cleanup after %s failure when the shared resource owner closes",
+  async (failure) => {
+    const options = {
+      scope: "core:plugin-lifecycle",
+      key: "global",
+      database: { scope: "shared" as const },
+      leaseMs: 60_000,
+      waitMs: 0,
+      processBound: true,
+    };
+    await expect(
+      withOpenClawStateLease(
+        { ...options, heartbeat: failure === "startup" ? "worker" : undefined },
+        async () => {
+          await closeOpenClawStateDatabaseAsync();
+          storage.unavailable = true;
+          throw new Error("Synthetic operation lost maintenance admission");
+        },
+      ),
+    ).rejects.toThrow("State lease operation and cleanup failed");
+    storage.unavailable = false;
+    await closeOpenClawStateDatabaseAsync();
+    await expect(withOpenClawStateLease(options, async () => "recovered")).resolves.toBe(
+      "recovered",
+    );
+  },
+);

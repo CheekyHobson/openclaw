@@ -513,9 +513,45 @@ async function runStateLeaseOwnerInScope<T>(
       await workerOperations?.drain();
     };
 
+    // Retain cleanup authority even when heartbeat startup fails before callback entry.
+    const execution =
+      workerOperations ??
+      createOpenClawStateLeaseWorkerOwner({
+        identity: { scope: identity.scope, key: identity.key, owner: identity.owner },
+        databasePath: resolveLeaseDatabasePath(validated.database),
+        sourceContext: nativeLeaseSource?.context,
+        sourceIdentity: nativeLeaseSource?.identity,
+        assertCurrent: (purpose) => {
+          if (purpose === "release") {
+            if (disposed || phase !== "draining" || !heartbeatStopped) {
+              throw new Error("State lease cleanup has not joined its heartbeat");
+            }
+            return;
+          }
+          assertActive();
+          if (validated.database.schemaPolicy === "existing") {
+            throw new Error("This lease mode does not support worker writes");
+          }
+          if (validated.heartbeat === "worker") {
+            if (!workerHeartbeat) {
+              abortLost();
+              throw leaseLost.signal.reason;
+            }
+            // The worker transaction rechecks durable expiry; host grants only check liveness.
+            workerHeartbeat.assertRunning();
+            return;
+          }
+          // A delayed expiry timer must not admit another synchronous effect.
+          if (confirmedExpiresAt === undefined || Date.now() >= confirmedExpiresAt) {
+            abortLost();
+            assertActive();
+          }
+        },
+      });
+    workerOperations = execution;
+
     let result: T;
     try {
-      const execution = workerOperations;
       if (validated.heartbeat === "worker") {
         validated.signal?.addEventListener("abort", stopWorker, { once: true });
         await startWorker(confirmedExpiresAt);
@@ -631,39 +667,7 @@ async function runStateLeaseOwnerInScope<T>(
             };
           },
         };
-        workerOperations = createOpenClawStateLeaseWorkerOwner({
-          lease,
-          identity: { scope: identity.scope, key: identity.key, owner: identity.owner },
-          databasePath: resolveLeaseDatabasePath(validated.database),
-          sourceContext: nativeLeaseSource?.context,
-          sourceIdentity: nativeLeaseSource?.identity,
-          assertCurrent: (purpose) => {
-            if (purpose === "release") {
-              if (disposed || phase !== "draining" || !heartbeatStopped) {
-                throw new Error("State lease cleanup has not joined its heartbeat");
-              }
-              return;
-            }
-            assertActive();
-            if (validated.database.schemaPolicy === "existing") {
-              throw new Error("This lease mode does not support worker writes");
-            }
-            if (validated.heartbeat === "worker") {
-              if (!workerHeartbeat) {
-                abortLost();
-                throw leaseLost.signal.reason;
-              }
-              // The worker transaction rechecks durable expiry; host grants only check liveness.
-              workerHeartbeat.assertRunning();
-              return;
-            }
-            // A delayed expiry timer must not admit another synchronous effect.
-            if (confirmedExpiresAt === undefined || Date.now() >= confirmedExpiresAt) {
-              abortLost();
-              assertActive();
-            }
-          },
-        });
+        execution.bind(lease);
         result = await invocation.run(lease, identity);
       }
       await drain();
