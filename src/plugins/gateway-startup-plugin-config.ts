@@ -346,6 +346,10 @@ export function collectValidationConfiguredRefs(config: OpenClawConfig) {
   }
   const shorthandModelRefs: string[] = [];
   for (const ref of collectConfiguredModelRefs(config)) {
+    // Decision providers resolve through their contract owners, not direct provider IDs.
+    if (ref.capability === "decision") {
+      continue;
+    }
     const slashIndex = ref.value.indexOf("/");
     if (slashIndex > 0) {
       pushProviderId(ref.value.slice(0, slashIndex));
