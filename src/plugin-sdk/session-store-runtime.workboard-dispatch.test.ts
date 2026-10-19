@@ -42,6 +42,7 @@ type WorkboardStore = {
     metadata: { failureCount: number };
   }): Promise<WorkboardCard>;
   get(id: string): Promise<WorkboardCard | undefined>;
+  addWorkerLog(...args: unknown[]): Promise<unknown>;
   close(): Promise<void>;
 };
 
@@ -54,9 +55,13 @@ const { WorkboardStore, registerWorkboardGatewayMethods } = await vi.importActua
   }) => void;
 }>("../../extensions/workboard/runtime-api.js");
 
-it.each([true, false])(
-  "dispatches an archived worker fresh without spending retries (assigned: %s)",
-  async (assigned) => {
+it.each([
+  { label: "assigned", assigned: true, failDiagnostic: false },
+  { label: "unassigned", assigned: false, failDiagnostic: false },
+  { label: "diagnostic failure", assigned: true, failDiagnostic: true },
+])(
+  "dispatches an archived worker fresh without spending retries ($label)",
+  async ({ assigned, failDiagnostic }) => {
     await withOpenClawTestState({ label: "workboard-archived-worker" }, async () => {
       const config = { agents: { entries: { worker: {} } } };
       const store = WorkboardStore.openSqlite(
@@ -147,6 +152,10 @@ it.each([true, false])(
         expect(dispatch).toBeDefined();
         const respond = vi.fn();
         const params = { maxStarts: 1 };
+        using logWrite = vi.spyOn(store, "addWorkerLog");
+        if (failDiagnostic) {
+          logWrite.mockRejectedValueOnce(new Error("worker log unavailable"));
+        }
         await dispatch!({
           req: {
             type: "req",
@@ -173,7 +182,11 @@ it.each([true, false])(
         const current = await store.get(card.id);
         expect(current?.metadata?.failureCount).toBe(1);
         expect(current?.metadata?.workerLogs).toContainEqual(
-          expect.objectContaining({ message: expect.stringContaining("archived worker session") }),
+          expect.objectContaining({
+            message: expect.stringContaining(
+              failDiagnostic ? "started subagent run" : "archived worker session",
+            ),
+          }),
         );
         await expect(loadTranscriptEvents({ ...scope, sessionId })).resolves.toEqual(
           previousTranscript,

@@ -374,12 +374,14 @@ async function runWorkboardDispatch(
           assertCurrent: assertOwnerCurrent,
         })
       ) {
-        await params.store.addWorkerLog(card.id, {
-          level: "info",
-          message:
-            "Dispatcher replaced the archived worker session with a fresh session; previous transcript retained.",
-          sessionKey,
-        });
+        await params.store
+          .addWorkerLog(card.id, {
+            level: "info",
+            message:
+              "Dispatcher replaced the archived worker session with a fresh session; previous transcript retained.",
+            sessionKey,
+          })
+          .catch(() => undefined);
       }
     } catch (error) {
       // A broader caller may retry a host-authorized card; it must never

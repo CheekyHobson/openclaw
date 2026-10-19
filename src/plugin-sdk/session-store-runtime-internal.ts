@@ -111,8 +111,12 @@ export async function replaceArchivedSubagentSession(params: {
               if (ownershipError) {
                 throw new Error(ownershipError.message);
               }
-              const block = resolveSessionWorkStartBlock(sessionKey, currentEntry);
-              if (block?.reason !== "archived" || currentEntry.modelSelectionLocked) {
+              // Archival is the only work-start block this operation may clear.
+              const block = resolveSessionWorkStartBlock(sessionKey, {
+                ...currentEntry,
+                archivedAt: undefined,
+              });
+              if (block || currentEntry.modelSelectionLocked) {
                 throw block ?? new Error("Archived worker session cannot be replaced.");
               }
               const now = Date.now();

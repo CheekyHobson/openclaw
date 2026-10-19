@@ -30,9 +30,21 @@ it.each([
   { label: "unowned session", caller: "system", pluginOwnerId: undefined },
   { label: "unscoped caller", caller: "unscoped", pluginOwnerId: "workboard" },
   { label: "missing plugin identity", caller: "unidentified", pluginOwnerId: "workboard" },
+  {
+    label: "pending worktree",
+    caller: "system",
+    pluginOwnerId: "workboard",
+    pending: { pendingWorktree: { titleSource: "Pending worker checkout" } },
+  },
+  {
+    label: "pending project checkout",
+    caller: "system",
+    pluginOwnerId: "workboard",
+    pending: { pendingProjectGitUrl: "https://example.invalid/worker.git" },
+  },
 ])(
-  "preserves plugin replacement authority and execution limits with roles ($label)",
-  async ({ caller, pluginOwnerId }) => {
+  "preserves plugin replacement authority and execution limits ($label)",
+  async ({ caller, pluginOwnerId, pending }) => {
     await withOpenClawTestState({ label: "archived-worker-roles" }, async () => {
       const config: OpenClawConfig = {
         agents: { entries: { main: {} } },
@@ -76,6 +88,7 @@ it.each([
           deny: ["exec"],
           requesterDeny: ["exec"],
         },
+        ...pending,
         ...(pluginOwnerId !== undefined ? { pluginOwnerId } : {}),
       };
       await replaceSessionEntry(scope, entry);
@@ -102,13 +115,17 @@ it.each([
                 replace,
               ),
             );
-      if (caller !== "system" || pluginOwnerId !== "workboard") {
+      if (caller !== "system" || pluginOwnerId !== "workboard" || pending) {
         await expect(operation).rejects.toThrow(
-          caller === "unscoped" || caller === "unidentified"
-            ? "requires an active plugin request identity"
-            : /role|scope|allowed|access|did not create/i,
+          pending
+            ? "workspace is not ready"
+            : caller === "unscoped" || caller === "unidentified"
+              ? "requires an active plugin request identity"
+              : /role|scope|allowed|access|did not create/i,
         );
-        await expect(getSessionEntryAsync(scope)).resolves.toMatchObject(entry);
+        await expect(sessionRead.readSessionEntryReadOnlyInWorker(scope)).resolves.toMatchObject(
+          entry,
+        );
       } else {
         await expect(operation).resolves.toBe(true);
         const fresh = await getSessionEntryAsync(scope);

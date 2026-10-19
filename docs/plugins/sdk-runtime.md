@@ -551,7 +551,7 @@ callbacks, retired plugins, and cancelled requests cannot replace archived sessi
 Supply the current config reader and any additional caller authority assertion;
 prepared source capabilities retain their commit scope. Authority and config are
 checked again before commit, and a concurrently changed row is refused. Initialization,
-provider-review, and locked-session restrictions remain in force. Prepare before
+provider-review, pending-workspace, and locked-session restrictions remain in force. Prepare before
 claiming automation work so a refusal cannot consume its retry budget.
 
 ### Memory runtime replacement

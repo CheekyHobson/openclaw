@@ -118,7 +118,7 @@ The dispatch loop:
 1. Promotes dependency-ready children to `ready`.
 2. Blocks expired claims or timed-out worker runs.
 3. Selects a small batch of unclaimed ready cards.
-4. Claims each selected card for the dispatcher or assigned agent.
+4. Prepares the fixed worker session, then claims each selected card for the dispatcher or assigned agent.
 5. Starts a subagent worker run with bounded card context and the card claim token.
 6. Stores the worker run id, session key, execution status, and worker log on the card.
 
@@ -132,6 +132,7 @@ If worker start fails after a card is claimed, Workboard blocks that card and cl
 
 If the card's automation-owned worker session was archived, dispatch starts a fresh
 session under the same key and records the replacement in the card's worker log.
+This informational log is best-effort; a logging failure does not block dispatch.
 The previous transcript remains in session history. Archival alone does not consume
 the card's retry budget. If session preparation is refused, the card stays unclaimed.
 
