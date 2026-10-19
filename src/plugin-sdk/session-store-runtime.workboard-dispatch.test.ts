@@ -2,6 +2,7 @@ import path from "node:path";
 import type { WorkboardCard } from "@openclaw/workboard-contract";
 import { expect, it, vi } from "vitest";
 import type { GatewayRequestHandlerOptions } from "../gateway/server-methods/types.js";
+import { createContext } from "../gateway/server-plugin-in-process-dispatch.test-support.js";
 import type { OpenClawPluginApi } from "../plugins/plugin-api.types.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { createTestPluginApi } from "./plugin-test-api.js";
@@ -135,7 +136,7 @@ it.each([true, false])(
           client: {
             connect: { scopes: ["operator.admin"] },
           } as GatewayRequestHandlerOptions["client"],
-          context: { getRuntimeConfig: () => config } as GatewayRequestHandlerOptions["context"],
+          context: createContext([], () => config),
           isWebchatConnect: () => false,
         });
         expect(respond).toHaveBeenCalledWith(
