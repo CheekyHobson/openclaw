@@ -282,7 +282,8 @@ export function ChatDetails(props: ChatDetailsViewProps) {
     const stop = [
       listen(window, "resize", reposition),
       listen(document, "pointerdown", outside),
-      listen(document, "keydown", (event) => {
+      // Child overlays consume Escape at document/root level before the inspector.
+      listen(window, "keydown", (event) => {
         if (event instanceof KeyboardEvent) {
           escape(event);
         }
@@ -307,7 +308,6 @@ export function ChatDetails(props: ChatDetailsViewProps) {
   return (
     <openclaw-chat-details
       ref={(element) => (host = element)}
-      style={{ display: "contents" }}
       mobile={props.mobile ? "" : undefined}
     >
       <button
