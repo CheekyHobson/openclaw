@@ -39,6 +39,7 @@ declare module "@solidjs/web" {
       messageActions: MessageActionDetails | null | undefined;
     }
     interface IntrinsicElements {
+      "openclaw-mcp-app-catalog": HTMLAttributes<HTMLElement> & { surface?: string };
       "openclaw-chat-sent-comments": HTMLAttributes<HTMLElement>;
       "openclaw-chat-sources": HTMLAttributes<HTMLElement>;
       "openclaw-chat-summary-automations": HTMLAttributes<HTMLElement>;

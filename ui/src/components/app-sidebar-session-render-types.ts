@@ -25,7 +25,6 @@ import type {
   SidebarSessionProjection,
   SidebarVisibleSections,
 } from "./app-sidebar-session-projection.ts";
-import "./mcp-app-catalog.tsx";
 import "./menu-surface.ts";
 import type {
   SidebarRecentSession,
@@ -254,11 +253,6 @@ declare module "@solidjs/web" {
           "prop:onClose"?: HTMLElementTagNameMap["openclaw-catalog-session-menu"]["onClose"];
         };
       "openclaw-channel-avatar": BridgeAttributes<ChannelAvatarProps>;
-      "openclaw-mcp-app-catalog": HTMLAttributes<
-        HTMLElementTagNameMap["openclaw-mcp-app-catalog"]
-      > &
-        Properties<HTMLElementTagNameMap["openclaw-mcp-app-catalog"]> &
-        Partial<Pick<HTMLElementTagNameMap["openclaw-mcp-app-catalog"], "surface">>;
       "openclaw-menu-surface": HTMLAttributes<HTMLElementTagNameMap["openclaw-menu-surface"]> &
         Properties<HTMLElementTagNameMap["openclaw-menu-surface"]>;
       "openclaw-plugin-contributions": HTMLAttributes<ContributionsElement> &

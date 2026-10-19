@@ -2,10 +2,10 @@ import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { dynamic } from "@solidjs/web";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { createFooterControlRef } from "../../../app/shell-layout-traits-solid.tsx";
+import { McpAppCatalog } from "../../../components/mcp-app-catalog.tsx";
 import { createBackgroundLayoutRef } from "../../../components/session-background-layout-context.tsx";
-import { Icon } from "../../../components/solid/icon.tsx";
 import "../../../styles/chat/composer-surface.css";
-import "../../../components/mcp-app-catalog.tsx";
+import { Icon } from "../../../components/solid/icon.tsx";
 import "../../../components/solid/mcp-app-context-strip.tsx";
 import "../../../components/mcp-app-resources.tsx";
 import { clearCompositionEnd } from "../../../lib/ime.ts";
@@ -354,10 +354,10 @@ export function renderChatComposerView(
             <div class="agent-chat__composer-lede">
               {props.sessionAdmitted === false ? undefined : (
                 <>
-                  <openclaw-mcp-app-catalog
+                  <McpAppCatalog
                     surface="thread"
-                    prop:sessionKey={props.sessionKey}
-                    prop:agentId={props.currentAgentId}
+                    sessionKey={props.sessionKey}
+                    agentId={props.currentAgentId}
                   />
                   <openclaw-mcp-app-resources
                     prop:sessionKey={props.sessionKey}
