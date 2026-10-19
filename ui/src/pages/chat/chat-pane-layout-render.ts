@@ -1,4 +1,5 @@
 import { buildControlUiFocusPath } from "@openclaw/session-url-contract";
+import type { Element } from "solid-js";
 import type { SessionObserverDigest } from "../../../../packages/gateway-protocol/src/index.js";
 import "./components/chat-details.tsx";
 import type { GatewaySessionRow } from "../../api/types.ts";
@@ -56,6 +57,13 @@ type ChatPaneLayoutRenderParams = {
 };
 
 export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRender {
+  dashboardControls: Element | undefined = undefined;
+  private readonly setDashboardControls = (action: Element | undefined) => {
+    if (this.dashboardControls !== action) {
+      this.dashboardControls = action;
+    }
+  };
+
   private readonly detailsElements: ChatDetailsElements = {};
 
   private registerDetailsElement(name: keyof ChatDetailsElements, element: HTMLElement) {
@@ -450,6 +458,13 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
               preview: () => !this.presented && this.connectionGeneration === connectionGeneration,
             },
           };
+    if (header) {
+      header.header.header.setDashboardControls = this.setDashboardControls;
+    }
+    const dashboard = panelDefinitions.find((definition) => definition.slot === "dashboard");
+    if (dashboard?.view?.dashboard) {
+      dashboard.view.dashboard.controls = this.dashboardControls;
+    }
     const avatar = resolveAssistantDisplayAvatar(chatProps);
     const region = renderSidebarRegion({
       mobileScrollFades: this.mobileScrollFades,

@@ -119,7 +119,12 @@ export const ChatDetails = defineSolidBridge<Props, Methods>(
       mobile: props.mobile,
       conversationVisible: props.conversationVisible ?? true,
       externalTrigger: props.externalTrigger ?? false,
-      elements: props.elements,
+      elements: {
+        pane: props.elements?.pane,
+        header: props.elements?.header,
+        frame: props.elements?.frame,
+        footer: props.elements?.footer,
+      },
       presentation: presentation(),
       mobileHost: Boolean(props.mobileHost),
       detailsMount: props.mobileHost?.detailsMount,
@@ -269,33 +274,46 @@ export const ChatDetails = defineSolidBridge<Props, Methods>(
         close(true);
       }
     };
+    // Unrelated session updates must not retire an open progress menu.
+    const layoutState = createMemo(() => ({ open: opened(), dock: docked(), ...readLayout() }), {
+      equals: (before, after) =>
+        before.open === after.open &&
+        before.dock === after.dock &&
+        before.mobile === after.mobile &&
+        before.conversationVisible === after.conversationVisible &&
+        before.externalTrigger === after.externalTrigger &&
+        before.elements.pane === after.elements.pane &&
+        before.elements.header === after.elements.header &&
+        before.elements.frame === after.elements.frame &&
+        before.elements.footer === after.elements.footer &&
+        before.presentation === after.presentation &&
+        before.mobileHost === after.mobileHost &&
+        before.detailsMount === after.detailsMount,
+    });
     // Synchronize the native popover and pane geometry with presentation intent.
-    createEffect(
-      () => [opened(), docked(), readLayout()] as const,
-      ([open, dock, layout]) => {
-        hide();
-        // Let Portal register delegated events before onSettled first mounts the surface.
-        // It can later move outside the header’s render root into the pane or frame.
-        if (surface.parentElement) {
-          mountSurface(layout);
-        }
-        panel.hidden = !open;
-        panel.popover = dock || layout.mobileHost ? null : "manual";
-        panel.style.cssText = "";
-        panel.classList.toggle("chat-details--docked", dock);
-        layout.elements?.frame?.style.setProperty(
-          "--chat-details-space",
-          dock ? DETAILS_WIDTH + "px" : "0px",
-        );
-        if (open && !dock && !layout.mobileHost) {
-          position(layout);
-          // Keep native Tab entry beside its header trigger after portaling the content.
-          panel.showPopover({
-            source: focusSource(layout.mobile, layout.externalTrigger, layout.presentation),
-          });
-        }
-      },
-    );
+    createEffect(layoutState, ({ open, dock, ...layout }) => {
+      hide();
+      // Let Portal register delegated events before onSettled first mounts the surface.
+      // It can later move outside the header’s render root into the pane or frame.
+      if (surface.parentElement) {
+        mountSurface(layout);
+      }
+      panel.hidden = !open;
+      panel.popover = dock || layout.mobileHost ? null : "manual";
+      panel.style.cssText = "";
+      panel.classList.toggle("chat-details--docked", dock);
+      layout.elements?.frame?.style.setProperty(
+        "--chat-details-space",
+        dock ? DETAILS_WIDTH + "px" : "0px",
+      );
+      if (open && !dock && !layout.mobileHost) {
+        position(layout);
+        // Keep native Tab entry beside its header trigger after portaling the content.
+        panel.showPopover({
+          source: focusSource(layout.mobile, layout.externalTrigger, layout.presentation),
+        });
+      }
+    });
     const reposition = () => {
       const layout = readLayout();
       mountSurface(layout);

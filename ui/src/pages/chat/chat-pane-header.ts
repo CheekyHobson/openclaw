@@ -571,6 +571,7 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
       renameDisabledReason,
       actionsDisabled: this.state?.connected !== true,
       panelMenuActions,
+      dashboardWidgetMenu: boardWidgetMenu,
       layoutMenuActions: defaultAction
         ? [{ id: "dashboard-default", icon: "check", ...defaultAction }]
         : [],
