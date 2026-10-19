@@ -8,7 +8,6 @@ import {
   normalizeExecApprovals,
   readExecApprovalsSnapshotAsync,
   redactExecApprovals,
-  resolveExecApprovalsFromFile,
   updateExecApprovals,
   type ExecApprovalsFile,
   type ExecApprovalsSnapshot,
@@ -32,15 +31,12 @@ export function loadSnapshotLocal(): Promise<LocalExecApprovalsSnapshot> {
       assertCurrent();
       const socket = await readExecApprovalsSocket(env, { assertCurrent });
       assertCurrent();
-      return {
-        ...redactExecApprovals({
-          ...snapshot,
-          file: socket?.socket_path
-            ? { ...snapshot.file, socket: { ...snapshot.file.socket, path: socket.socket_path } }
-            : snapshot.file,
-        }),
-        resolvedDefaults: resolveExecApprovalsFromFile({ file: snapshot.file }).defaults,
-      };
+      return redactExecApprovals({
+        ...snapshot,
+        file: socket?.socket_path
+          ? { ...snapshot.file, socket: { ...snapshot.file.socket, path: socket.socket_path } }
+          : snapshot.file,
+      });
     },
   });
 }
@@ -71,10 +67,7 @@ export function saveSnapshotLocal(
       if (!snapshot) {
         throw new Error("Exec approvals changed; reload and retry.");
       }
-      return {
-        ...redactExecApprovals(snapshot),
-        resolvedDefaults: resolveExecApprovalsFromFile({ file: snapshot.file }).defaults,
-      };
+      return redactExecApprovals(snapshot);
     },
   });
 }
