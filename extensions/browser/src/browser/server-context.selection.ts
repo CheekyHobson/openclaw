@@ -7,6 +7,7 @@ import { appendCdpPath } from "./cdp.js";
 import { getChromeMcpModule } from "./chrome-mcp.runtime.js";
 import type { ResolvedBrowserProfile } from "./config.js";
 import { BrowserTabNotFoundError } from "./errors.js";
+import { assertBrowserControlUiOriginAllowed } from "./navigation-guard.js";
 import { getBrowserProfileCapabilities } from "./profile-capabilities.js";
 import { getPwAiModule } from "./pw-ai-module.js";
 import {
@@ -181,6 +182,7 @@ export function createProfileSelectionOps({
     if (!chosen) {
       throw new BrowserTabNotFoundError({ input: targetId ?? stickyTargetId });
     }
+    assertBrowserControlUiOriginAllowed(chosen.url);
     runtime.lastTargetId = chosen.targetId;
     return chosen;
   };
@@ -190,7 +192,9 @@ export function createProfileSelectionOps({
     options?: BrowserTabTargetOptions,
   ): Promise<string> => {
     const tabs = await listTabs(options);
-    return resolveBrowserTabOrThrow(targetId, tabs, options?.exactTargetId).targetId;
+    const tab = resolveBrowserTabOrThrow(targetId, tabs, options?.exactTargetId);
+    assertBrowserControlUiOriginAllowed(tab.url);
+    return tab.targetId;
   };
 
   const prepareTabOperation = async (

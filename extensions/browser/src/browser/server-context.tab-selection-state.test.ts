@@ -1,4 +1,8 @@
 import { lookup as dnsLookup } from "node:dns";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withBrowserFetchPreconnect } from "../../test-fetch.js";
 import "../test-support/browser-security.mock.js";
@@ -23,6 +27,7 @@ import {
 import * as sessionTabStore from "./session-tab-store.js";
 
 afterEach(async () => {
+  clearRuntimeConfigSnapshot();
   const { closePlaywrightBrowserConnection } = await import("./pw-session.js");
   await closePlaywrightBrowserConnection().catch(() => {});
   globalThis.fetch = originalFetch;
@@ -149,6 +154,21 @@ async function labeled() {
 }
 
 describe("browser tab selection and ownership", () => {
+  it.each(["ensureTabAvailable", "focusTab", "closeTab"] as const)(
+    "refuses %s on an existing Control UI tab before browser effects",
+    async (operation) => {
+      setRuntimeConfigSnapshot({ gateway: { publicOrigin: "https://control.example" } });
+      const { openclaw, runtime, fetchMock } = listOnly(() => [
+        page("APPROVAL", "https://control.example/approvals"),
+      ]);
+      await expect(openclaw[operation]("APPROVAL")).rejects.toThrow(
+        "cannot access this Gateway's Control UI",
+      );
+      expect(runtime.lastTargetId).toBeNull();
+      expect(fetchMock.mock.calls.every(([url]) => String(url).includes("/json/list"))).toBe(true);
+    },
+  );
+
   it("preserves a disappeared sticky alias when a newly discovered tab is blocked", async () => {
     const create = vi
       .spyOn(cdp, "createTargetViaCdp")

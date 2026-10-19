@@ -3,6 +3,10 @@
  * navigation while accounting for browser proxy routing.
  */
 import { isIP } from "node:net";
+import { networkInterfaces } from "node:os";
+import { resolveGatewayPublicOrigin } from "openclaw/plugin-sdk/config-contracts";
+import { resolveGatewayPort } from "openclaw/plugin-sdk/gateway-config-runtime";
+import { getRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import {
   isPrivateNetworkAllowedByPolicy,
   matchesHostnameAllowlist,
@@ -11,16 +15,13 @@ import {
   type LookupFn,
   type SsrFPolicy,
 } from "openclaw/plugin-sdk/security-runtime";
+import { isLoopbackHost } from "openclaw/plugin-sdk/ssrf-runtime";
 
 const NETWORK_NAVIGATION_PROTOCOLS = new Set(["http:", "https:"]);
+// Keep non-network navigation explicit; about:blank is the only bootstrap URL.
 const SAFE_NON_NETWORK_URLS = new Set(["about:blank"]);
 const BROWSER_NAVIGATION_CREDENTIALS_BLOCKED_MESSAGE =
   "Navigation blocked: URL-embedded credentials are not supported for page navigation. Set HTTP Basic auth with `openclaw browser set credentials <username> <password>` or use an authenticated browser profile.";
-
-function isAllowedNonNetworkNavigationUrl(parsed: URL): boolean {
-  // Keep non-network navigation explicit; about:blank is the only allowed bootstrap URL.
-  return SAFE_NON_NETWORK_URLS.has(parsed.href);
-}
 
 export class InvalidBrowserNavigationUrlError extends Error {
   constructor(message: string) {
@@ -29,7 +30,49 @@ export class InvalidBrowserNavigationUrlError extends Error {
   }
 }
 
-/** Parse a page-navigation URL and reject credentials before any transport dispatch. */
+/** Keep this Gateway's human decision surface out of its browser automation. */
+export function assertBrowserControlUiOriginAllowed(rawUrl: string): void {
+  const url = URL.parse(rawUrl);
+  if (!url || !NETWORK_NAVIGATION_PROTOCOLS.has(url.protocol)) {
+    return;
+  }
+  const config = getRuntimeConfigSnapshot();
+  const gateway = config?.gateway;
+  const origins = [
+    resolveGatewayPublicOrigin(config),
+    ...(gateway?.controlUi?.allowedOrigins ?? []),
+    gateway?.remote?.url,
+  ];
+  const configuredOrigin = origins.some((origin) => {
+    const parsed = origin ? URL.parse(origin) : null;
+    if (!parsed) {
+      return false;
+    }
+    if (parsed.protocol === "ws:" || parsed.protocol === "wss:") {
+      parsed.protocol = parsed.protocol === "wss:" ? "https:" : "http:";
+    }
+    return parsed.origin === url.origin;
+  });
+  const atGatewayPort =
+    Number(url.port || (url.protocol === "https:" ? 443 : 80)) ===
+    resolveGatewayPort(config ?? undefined);
+  const hostname = normalizeHostname(url.hostname);
+  const localOrigin =
+    atGatewayPort &&
+    (isLoopbackHost(hostname) ||
+      hostname === "0.0.0.0" ||
+      hostname === normalizeHostname(gateway?.customBindHost ?? "") ||
+      Object.values(networkInterfaces()).some((addresses) =>
+        addresses?.some((address) => normalizeHostname(address.address) === hostname),
+      ));
+  if (configuredOrigin || localOrigin) {
+    throw new InvalidBrowserNavigationUrlError(
+      "OpenClaw browser automation cannot access this Gateway's Control UI; ask the user to operate it.",
+    );
+  }
+}
+
+/** Reject credentials and the Control UI before any navigation transport dispatch. */
 export function parseBrowserNavigationUrl(url: string): URL {
   const rawUrl = url.trim();
   if (!rawUrl) {
@@ -45,6 +88,7 @@ export function parseBrowserNavigationUrl(url: string): URL {
   if (parsed.username || parsed.password) {
     throw new InvalidBrowserNavigationUrlError(BROWSER_NAVIGATION_CREDENTIALS_BLOCKED_MESSAGE);
   }
+  assertBrowserControlUiOriginAllowed(parsed.href);
   return parsed;
 }
 
@@ -108,7 +152,7 @@ export async function assertBrowserNavigationAllowed(
   const parsed = parseBrowserNavigationUrl(opts.url);
 
   if (!NETWORK_NAVIGATION_PROTOCOLS.has(parsed.protocol)) {
-    if (isAllowedNonNetworkNavigationUrl(parsed)) {
+    if (SAFE_NON_NETWORK_URLS.has(parsed.href)) {
       return;
     }
     throw new InvalidBrowserNavigationUrlError(
@@ -149,6 +193,8 @@ export async function assertBrowserNavigationAllowed(
     policy: opts.ssrfPolicy,
     signal: opts.signal,
   });
+  // Config can change while DNS is pending; use the published owner again before dispatch.
+  assertBrowserControlUiOriginAllowed(parsed.href);
 }
 
 /**
@@ -173,10 +219,7 @@ export async function assertBrowserNavigationResultAllowed(
   if (!parsed) {
     return;
   }
-  if (
-    NETWORK_NAVIGATION_PROTOCOLS.has(parsed.protocol) ||
-    isAllowedNonNetworkNavigationUrl(parsed)
-  ) {
+  if (NETWORK_NAVIGATION_PROTOCOLS.has(parsed.protocol) || SAFE_NON_NETWORK_URLS.has(parsed.href)) {
     await assertBrowserNavigationAllowed(opts);
   }
 }

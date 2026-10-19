@@ -496,6 +496,7 @@ final class ComputerActionService {
         checkScopeAllowed: @escaping @MainActor () throws -> Void = {}) async throws -> OpenClawComputerActResult
     {
         try checkScopeAllowed()
+        try ApprovalPromptState.shared.checkComputerAction(params.action)
         let scope = inputScopeId ?? self.defaultInputScopeId
         return try await self.executionQueue.perform(
             params,
@@ -503,8 +504,13 @@ final class ComputerActionService {
             inputScopeId: scope)
         { [weak self] params, lifecycleGeneration in
             guard let self else { throw CancellationError() }
-            try self.executionQueue.checkExecutionAllowed(lifecycleGeneration: lifecycleGeneration)
-            try checkScopeAllowed()
+            let checkExecutionAllowed: @MainActor () throws -> Void = { [weak self] in
+                guard let self else { throw CancellationError() }
+                try self.executionQueue.checkExecutionAllowed(lifecycleGeneration: lifecycleGeneration)
+                try checkScopeAllowed()
+                try ApprovalPromptState.shared.checkComputerAction(params.action)
+            }
+            try checkExecutionAllowed()
             if params.deliveryMode == .background,
                params.windowRef == nil,
                !params.action.isWindowScopedOnly
@@ -515,12 +521,6 @@ final class ComputerActionService {
                     escalation: OpenClawComputerEscalation(
                         recommended: "window-pixel",
                         reasonCode: "no_window_target"))
-            }
-            let checkExecutionAllowed: @MainActor () throws -> Void = { [weak self] in
-                guard let self else { throw CancellationError() }
-                try self.executionQueue.checkExecutionAllowed(
-                    lifecycleGeneration: lifecycleGeneration)
-                try checkScopeAllowed()
             }
             if params.isWindowScopedRequest {
                 return try await self.window.perform(

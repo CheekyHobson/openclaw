@@ -1,10 +1,40 @@
 import AppKit
+import OpenClawKit
 import Testing
 @testable import OpenClaw
 
 @Suite(.serialized)
 @MainActor
 struct ExecApprovalPromptLayoutTests {
+    @Test func `pending approval refuses computer input before permissions or dispatch`() async throws {
+        let reservation = try #require(ExecApprovalsPromptPresenter.reservePromptForTesting())
+        defer { ExecApprovalsPromptPresenter.releasePromptForTesting(id: reservation) }
+
+        for action in [OpenClawComputerAction.leftClick, .key, .setValue] {
+            do {
+                _ = try await ComputerActionService().perform(
+                    OpenClawComputerActParams(action: action), lifecycleGeneration: 0)
+                Issue.record("Expected human approval to refuse computer input")
+            } catch let ComputerActionService.ComputerActionError.refused(message) {
+                #expect(message == "A human approval prompt is open on this Mac; wait for the user to answer it")
+            }
+        }
+    }
+
+    @Test func `closing one prompt does not enable input while another owner is pending`() throws {
+        let state = ApprovalPromptState()
+        let panel = UUID()
+        let queue = UUID()
+        state.setPending(true, source: panel)
+        state.setPending(true, source: queue)
+        state.setPending(false, source: panel)
+
+        #expect(throws: ComputerActionService.ComputerActionError.self) { try state.checkComputerAction(.key) }
+        try state.checkComputerAction(.listWindows)
+        state.setPending(false, source: queue)
+        try state.checkComputerAction(.key)
+    }
+
     @Test func `queued prompt expires without later presentation`() async throws {
         let reservation = try #require(ExecApprovalsPromptPresenter.reservePromptForTesting())
         defer { ExecApprovalsPromptPresenter.releasePromptForTesting(id: reservation) }
@@ -176,8 +206,8 @@ struct ExecApprovalPromptLayoutTests {
     }
 
     @Test func `approval request decodes valid allowed decisions only`() throws {
-        let data = #"{"command":"/bin/sh -lc pwd","ask":"on-miss","allowedDecisions":["allow-once","bad","deny",3]}"#
-            .data(using: .utf8)!
+        let data = Data(
+            #"{"command":"/bin/sh -lc pwd","ask":"on-miss","allowedDecisions":["allow-once","bad","deny",3]}"#.utf8)
 
         let request = try JSONDecoder().decode(ExecApprovalPromptRequest.self, from: data)
 
@@ -185,8 +215,7 @@ struct ExecApprovalPromptLayoutTests {
     }
 
     @Test func `approval request falls back when allowed decisions has wrong shape`() throws {
-        let data = #"{"command":"/bin/sh -lc pwd","ask":"always","allowedDecisions":"allow-once"}"#
-            .data(using: .utf8)!
+        let data = Data(#"{"command":"/bin/sh -lc pwd","ask":"always","allowedDecisions":"allow-once"}"#.utf8)
 
         let request = try JSONDecoder().decode(ExecApprovalPromptRequest.self, from: data)
 
@@ -212,6 +241,7 @@ struct ExecApprovalPromptLayoutTests {
         let visibleFrame = try #require(NSScreen.main?.visibleFrame)
 
         #expect(panel.frame.width > 0)
+        #expect(panel.sharingType == .none)
         #expect(panel.frame.height > 0)
         #expect(panel.frame.width <= visibleFrame.width)
         #expect(panel.frame.height <= visibleFrame.height)

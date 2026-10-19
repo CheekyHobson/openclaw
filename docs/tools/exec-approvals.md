@@ -60,6 +60,14 @@ for matching, prompting, and binding restrictions.
 
 ### macOS split
 
+OpenClaw keeps its native approval panels out of Peekaboo screen snapshots and
+pauses native computer input while human approvals are pending, including the
+menu-bar queue. Browser automation refuses the Gateway's known Control UI
+origins, including attached Chrome tabs. Human approval controls remain usable.
+The separate CUA driver and third-party automation on the same machine can still
+operate UI; do not combine ask-mode exec with unrestricted computer use for a
+model you do not trust. These protections are hardening, not an isolation boundary.
+
 - The **node host service** forwards `system.run` to the **macOS app** over local IPC.
 - The **macOS app** enforces approvals and executes the command in UI context.
 

@@ -141,6 +141,10 @@ final class AppActivation {
         completion: @escaping (NSApplication.ModalResponse) -> Void = { _ in })
     {
         if self.allowsActivation {
+            let source = UUID()
+            alert.window.sharingType = .none
+            ApprovalPromptState.shared.setPending(alert.buttons.count > 1, source: source)
+            defer { ApprovalPromptState.shared.setPending(false, source: source) }
             completion(alert.runModal())
         } else {
             let parent = NSApp.windows.first { $0.isVisible && $0.canBecomeMain && !$0.isSheet }
