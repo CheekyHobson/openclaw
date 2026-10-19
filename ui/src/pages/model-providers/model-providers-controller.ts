@@ -260,8 +260,15 @@ export function createModelProviders(
       core.invalidate();
       routeDataObserved = true;
       setSelectedAgent(context.settingsAgentSelection.state.selectedId ?? "");
+      // The catalog can change after preload completes but before this page subscribes.
+      const catalogScope = { agentId: state.selectedAgentId };
+      const catalogCurrent =
+        !data.client ||
+        !modelCatalog.peekModelCatalog(data.client, catalogScope, { allowStale: true }) ||
+        modelCatalog.peekModelCatalog(data.client, catalogScope) !== undefined;
       if (
         readAccess &&
+        catalogCurrent &&
         (data.agentId ?? "") === state.selectedAgentId &&
         data.selectionIntentRevision === context.settingsAgentSelection.intentRevision &&
         gateway.isRouteDataCurrent(data)
