@@ -306,11 +306,10 @@ export abstract class ChatPaneLayoutRender extends ChatPaneHeaderLayout {
       },
       onOpenSidebar: chatProps.onOpenSidebar
         ? (content) => {
-            chatProps.onOpenSidebar?.(content);
-            const selected = state.sidebarLayout.columns[0]?.panels.find(
-              (panel) => panel.id === state.sidebarFocusPanelId,
-            );
-            this.navigateMobileHost({ area: "panels", slot: selected?.slot });
+            const slot = chatProps.onOpenSidebar?.(content);
+            if (slot) {
+              this.navigateMobileHost({ area: "panels", slot });
+            }
           }
         : undefined,
       onOpenWorkspaceFile: chatProps.onOpenWorkspaceFile
