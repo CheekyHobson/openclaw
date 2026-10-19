@@ -223,20 +223,19 @@ function limitTrajectoryPayloadValue(
       map === Array.prototype.map;
     const visit = (item: unknown) =>
       limitTrajectoryPayloadValue(item, depth + 1, seen, privateRecords && nativeMap);
+    const elementDescriptor: PropertyDescriptor | undefined = nativeMap
+      ? { enumerable: true, configurable: true, writable: true }
+      : undefined;
     let limited: unknown[];
-    if (nativeMap) {
+    if (elementDescriptor) {
       // Own the destination: Array species can otherwise expose copies through a setter.
       const length = sliced.length;
       limited = [];
       limited.length = length;
       for (let index = 0; index < length; index++) {
         if (index in sliced) {
-          Object.defineProperty(limited, index, {
-            value: visit(sliced[index]),
-            enumerable: true,
-            configurable: true,
-            writable: true,
-          });
+          elementDescriptor.value = visit(sliced[index]);
+          Object.defineProperty(limited, index, elementDescriptor);
         }
       }
     } else {
@@ -252,13 +251,9 @@ function limitTrajectoryPayloadValue(
         },
         privateRecords && nativeMap,
       );
-      if (nativeMap) {
-        Object.defineProperty(limited, limited.length, {
-          value: marker,
-          enumerable: true,
-          configurable: true,
-          writable: true,
-        });
+      if (elementDescriptor) {
+        elementDescriptor.value = marker;
+        Object.defineProperty(limited, limited.length, elementDescriptor);
       } else {
         limited.push(marker);
       }

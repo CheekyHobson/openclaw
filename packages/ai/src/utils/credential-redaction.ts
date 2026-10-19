@@ -263,7 +263,7 @@ export function projectDiagnosticValue(
     }
     const record =
       diagnosticRecords.has(value) && Object.getPrototypeOf(value) === null
-        ? (value as Record<string, unknown>)
+        ? (value as Record<string, unknown>) // SAFETY: The owner-held set contains only private data records.
         : undefined;
     if (!Array.isArray(value) && !record) {
       try {
@@ -305,9 +305,10 @@ export function projectDiagnosticValue(
     const redactMedia =
       mediaPayload || keys.length > maxKeys || isDiagnosticMediaPayload(descriptors, record);
     // Owned records have only private data fields; opaque values retain the descriptor snapshot.
-    for (const key of record ? keys.slice(0, maxKeys) : Object.keys(descriptors)) {
-      if (typeof key !== "string") {
-        continue;
+    let projectedKeys = 0;
+    for (const key in record ?? descriptors) {
+      if (record && !(projectedKeys++ < maxKeys)) {
+        break;
       }
       const descriptor = descriptors[key];
       if (
