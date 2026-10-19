@@ -10,7 +10,10 @@ import {
   closeOpenClawStateDatabaseAsync,
   openOpenClawStateDatabase,
   repairOpenClawStateDatabaseSchema,
+  repairOpenClawStateDatabaseIndexesForDoctor,
+  repairOpenClawStateDatabaseReadabilityForDoctor,
 } from "../state/openclaw-state-db.js";
+import { addPreCutoverClientCredentialTablesForTest } from "../state/openclaw-state-schema.test-support.js";
 import { readUpdateDatabaseGenerations } from "./update-database-generations.js";
 import {
   getDoctorMigrationBackup,
@@ -24,12 +27,20 @@ import { createUpdateDoctorDatabaseWriteCapture } from "./update-doctor-result.j
 
 const directories = useAutoCleanupTempDirTracker(afterEach);
 
-it("does not reuse a consumed migration source after agent maintenance writes", async () => {
+it("retains the migration source through preparation and consumes it before agent maintenance writes", async () => {
   const root = fs.realpathSync(directories.make("captured-maintenance-state-"));
   const pathname = path.join(root, "state", "openclaw.sqlite");
   const env = { ...process.env, OPENCLAW_STATE_DIR: root };
   openOpenClawStateDatabase({ env });
   await closeOpenClawStateDatabaseAsync();
+  fs.rmSync(path.join(root, "client"), { recursive: true });
+  {
+    using database = new DatabaseSync(pathname);
+    addPreCutoverClientCredentialTablesForTest(database);
+    database.exec(`PRAGMA user_version = 20;
+      UPDATE schema_meta SET schema_version = 20;
+      DELETE FROM config_machine_state WHERE state_key = 'state.schema.contentVersion';`);
+  }
   const generations = readUpdateDatabaseGenerations([pathname]);
   const capture = createUpdateDoctorDatabaseWriteCapture(generations, {
     env,
@@ -44,7 +55,11 @@ it("does not reuse a consumed migration source after agent maintenance writes", 
     await capture.admit();
     await scope.run(() =>
       capture.run(async () => {
-        openOpenClawStateDatabase({ env });
+        expect(repairOpenClawStateDatabaseIndexesForDoctor({ env }).warnings).toEqual([]);
+        expect(repairOpenClawStateDatabaseReadabilityForDoctor({ env }).warnings).toEqual([]);
+        expect(
+          repairOpenClawStateDatabaseSchema({ env, versionMigrationOnly: true }).warnings,
+        ).toEqual([]);
         await withAgentDatabaseMaintenanceLease({ env, processBound: true }, async () => {});
         expect(repairOpenClawStateDatabaseSchema({ env }).warnings).toEqual([]);
         await closeOpenClawStateDatabaseAsync();
