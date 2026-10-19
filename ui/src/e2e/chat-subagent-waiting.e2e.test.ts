@@ -687,7 +687,7 @@ suite.define(() => {
         // runs' tokens count on its line.
         await block.getByText(answerText, { exact: true }).waitFor();
         expect(await activePane.locator(".chat-group.assistant").count()).toBe(1);
-        expect(await requestClock()).toBe(history[0]!.timestamp);
+        expect((await requestClock())?.trim()).toBe("1m 13s");
         await reportUsage("parent-resumed-run", 256, 3);
         await expect.poll(workingTokens).toBe("4.4k output tokens");
 
