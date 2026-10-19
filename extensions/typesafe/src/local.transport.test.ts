@@ -6,8 +6,6 @@ import { getPreparedPluginSecretInput } from "openclaw/plugin-sdk/secret-input-r
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { evaluate } from "./client.js";
 import { runtimeConfig } from "./config.js";
-import { resolveRuntimeConfig } from "./credentials.js";
-import { legacyWireFixture } from "./prepared.test-support.js";
 import type { EvaluationInput } from "./schema.js";
 import {
   choiceAnswer,
