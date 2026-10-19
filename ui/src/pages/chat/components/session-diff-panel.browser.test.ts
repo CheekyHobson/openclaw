@@ -13,6 +13,92 @@ const root = "/workspace/investigating-why-a-pr-was-not-merged";
 afterEach(() => document.body.replaceChildren());
 
 describe.runIf(browserMode)("Review header layout", () => {
+  it("settles Review navigation before focusing and scrolling its destination", async () => {
+    const { page, userEvent } = await import("vitest/browser");
+    await page.viewport(1200, 800);
+    let panel!: HTMLElementTagNameMap["openclaw-session-diff"];
+    mountSolid(() =>
+      createComponent(SessionDiffPanel, {
+        mobile: false,
+        ref: (element) => {
+          panel = element;
+        },
+      }),
+    );
+    panel.style.cssText = "display:flex;position:fixed;left:0;top:0;width:1100px;height:500px";
+    const paths = ["first.txt", "selected.txt", "last.txt"];
+    panel.loader = async () => ({
+      sessionKey: "main",
+      additions: 90,
+      deletions: 0,
+      files: paths.map((path) => ({
+        path,
+        status: "added",
+        additions: 30,
+        deletions: 0,
+        patch: `@@ -0,0 +1,30 @@\n${Array.from({ length: 30 }, (_, index) => `+line ${index + 1}`).join("\n")}`,
+      })),
+    });
+    await waitForSolid(() => expect(panel.querySelectorAll(".session-diff__file")).toHaveLength(3));
+    const files = [...panel.querySelectorAll<HTMLElement>(".session-diff__file")];
+    const selected = files[1]!;
+    const toggle = selected.querySelector<HTMLButtonElement>(".session-diff__file-toggle")!;
+    const viewport = selected.parentElement!;
+    const searchTrigger = panel.querySelector<HTMLButtonElement>(
+      'button[aria-label="Search changed files"]',
+    )!;
+    searchTrigger.focus();
+    await userEvent.keyboard("{Enter}");
+    const search = panel.querySelector<HTMLInputElement>(
+      'input[aria-label="Search changed files"]',
+    )!;
+    expect(document.activeElement).toBe(search);
+    await userEvent.fill(search, "selected");
+    expect(panel.querySelectorAll(".session-diff__tree-row")).toHaveLength(1);
+    await userEvent.keyboard("{Escape}");
+    expect(panel.querySelector('input[aria-label="Search changed files"]')).toBeNull();
+    expect(document.activeElement).toBe(searchTrigger);
+    expect(panel.querySelectorAll(".session-diff__tree-row")).toHaveLength(3);
+    await userEvent.keyboard("{Enter}");
+    const reopenedSearch = panel.querySelector<HTMLInputElement>(
+      'input[aria-label="Search changed files"]',
+    )!;
+    expect(document.activeElement).toBe(reopenedSearch);
+    expect(reopenedSearch.value).toBe("");
+
+    // Keep content below the selected file so viewport clamping cannot mask its scroll target.
+    const lastToggle = files[2]!.querySelector<HTMLButtonElement>(".session-diff__file-toggle")!;
+    lastToggle.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(lastToggle.getAttribute("aria-expanded")).toBe("true");
+
+    const jump = panel.querySelector<HTMLButtonElement>(".session-diff__jump")!;
+    jump.focus();
+    await userEvent.keyboard("{Enter}");
+    const destination = panel.querySelector<HTMLButtonElement>('button[data-value="jump:1"]')!;
+    await userEvent.click(destination);
+    expect(document.activeElement).toBe(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    const body = selected.querySelector<HTMLElement>(".session-diff__file-body")!;
+    expect(body.checkVisibility()).toBe(true);
+    expect(selected.getBoundingClientRect().top).toBeCloseTo(
+      viewport.getBoundingClientRect().top,
+      0,
+    );
+
+    viewport.scrollTop += 120;
+    expect(selected.getBoundingClientRect().top).toBeLessThan(viewport.getBoundingClientRect().top);
+    // The sticky header remains reachable while reading farther down this file.
+    await userEvent.keyboard("{Enter}");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(selected.querySelector(".session-diff__file-body")).toBeNull();
+    expect(selected.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      viewport.getBoundingClientRect().top,
+    );
+    expect(document.activeElement).toBe(toggle);
+    expect([...panel.querySelectorAll(".session-diff__file")]).toEqual(files);
+  });
+
   it("uses available width before truncating and preserves keyboard access to sync actions", async () => {
     const { page, userEvent } = await import("vitest/browser");
     await page.viewport(1200, 800);

@@ -1,4 +1,4 @@
-import { createMemo, createSignal, flush, onCleanup, onSettled, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, onSettled, Show } from "solid-js";
 import type { SessionsDiffResult } from "../../../../../packages/gateway-protocol/src/index.js";
 import { nativeGatewaysCapability } from "../../../app/native-gateways.runtime.ts";
 import { Icon } from "../../../components/solid/icon.tsx";
@@ -273,9 +273,10 @@ function SessionDiffContent(props: SessionDiffProps) {
     setCollapsedPaths((paths) => new Set([...paths].filter((entry) => entry !== path)));
     // Scrolling needs the expanded file's committed height, and menu return-focus
     // must settle before focus moves to the selected file.
-    flush();
-    fileElements.get(path)?.scrollIntoView({ block: "start" });
-    fileToggles.get(path)?.()?.focus({ preventScroll: true });
+    onSettled(() => {
+      fileElements.get(path)?.scrollIntoView({ block: "start" });
+      fileToggles.get(path)?.()?.focus({ preventScroll: true });
+    });
   }
   function toggleFile(path: string) {
     const collapsing = !collapsedPaths().has(path);
@@ -295,8 +296,9 @@ function SessionDiffContent(props: SessionDiffProps) {
       return next;
     });
     if (readingAbove) {
-      flush();
-      element.scrollIntoView({ block: "start" });
+      onSettled(() => {
+        element.scrollIntoView({ block: "start" });
+      });
     }
   }
   function toggleTree() {
@@ -310,8 +312,9 @@ function SessionDiffContent(props: SessionDiffProps) {
   function searchTree() {
     setTreeOpen(true);
     setTreeSearchOpen(true);
-    flush();
-    treeSearch?.focus();
+    onSettled(() => {
+      treeSearch?.focus();
+    });
   }
   function openAnchoredMenu(
     event: Event,
@@ -574,8 +577,9 @@ function SessionDiffContent(props: SessionDiffProps) {
     closeTreeSearch: () => {
       setTreeQuery("");
       setTreeSearchOpen(false);
-      flush();
-      treeSearchTrigger?.focus({ preventScroll: true });
+      onSettled(() => {
+        treeSearchTrigger?.focus({ preventScroll: true });
+      });
     },
     refreshCollapsed: () => {
       setCollapsedPaths(new Set(value()?.views.map((view) => view.file.path) ?? []));
