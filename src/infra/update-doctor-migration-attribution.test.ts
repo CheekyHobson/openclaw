@@ -4,10 +4,12 @@ import path from "node:path";
 import { constants, DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { withAgentDatabaseMaintenanceLease } from "../state/openclaw-agent-db-maintenance-lease.js";
 import { createOpenClawDatabaseMaintenanceScope } from "../state/openclaw-state-db-async-lifecycle.js";
 import {
   closeOpenClawStateDatabaseAsync,
   openOpenClawStateDatabase,
+  repairOpenClawStateDatabaseSchema,
 } from "../state/openclaw-state-db.js";
 import { readUpdateDatabaseGenerations } from "./update-database-generations.js";
 import {
@@ -21,6 +23,42 @@ import {
 import { createUpdateDoctorDatabaseWriteCapture } from "./update-doctor-result.js";
 
 const directories = useAutoCleanupTempDirTracker(afterEach);
+
+it("does not reuse a consumed migration source after agent maintenance writes", async () => {
+  const root = fs.realpathSync(directories.make("captured-maintenance-state-"));
+  const pathname = path.join(root, "state", "openclaw.sqlite");
+  const env = { ...process.env, OPENCLAW_STATE_DIR: root };
+  openOpenClawStateDatabase({ env });
+  await closeOpenClawStateDatabaseAsync();
+  const generations = readUpdateDatabaseGenerations([pathname]);
+  const capture = createUpdateDoctorDatabaseWriteCapture(generations, {
+    env,
+    signal: new AbortController().signal,
+    warn() {},
+  })!;
+  const scope = createOpenClawDatabaseMaintenanceScope({
+    schemaMaintenance: true,
+    assertOwnerCurrent() {},
+  });
+  try {
+    await capture.admit();
+    await scope.run(() =>
+      capture.run(async () => {
+        openOpenClawStateDatabase({ env });
+        await withAgentDatabaseMaintenanceLease({ env, processBound: true }, async () => {});
+        expect(repairOpenClawStateDatabaseSchema({ env }).warnings).toEqual([]);
+        await closeOpenClawStateDatabaseAsync();
+      }),
+    );
+    await capture.settle();
+    // Ordinary maintenance is not a new rollback baseline.
+    expect(capture.receipt?.unchanged).toBe(false);
+    expect(capture.receipt?.fromGenerations).toEqual(generations);
+  } finally {
+    await closeOpenClawStateDatabaseAsync();
+    await scope.close();
+  }
+});
 
 it("attributes a captured absent shared store and its new credential companion during bootstrap", async () => {
   const root = fs.realpathSync(directories.make("captured-fresh-state-"));
@@ -112,7 +150,13 @@ it.each(["fresh", "foreign", "reversed"] as const)(
     try {
       scope.run(() =>
         runWithUpdateDoctorMigrationCapture(
-          { expected: () => expected, assertCurrent() {}, accept, refuse() {} },
+          {
+            expected: () => expected,
+            migrationSource: () => expected,
+            assertCurrent() {},
+            accept,
+            refuse() {},
+          },
           () => {
             expect(() =>
               runUpdateSqliteMigration(database, pathname, operation, {
@@ -144,7 +188,13 @@ it.each(["captured-generation", null])(
     const refuse = vi.fn();
     runWithDoctorMigrationBackup(backup, () =>
       runWithUpdateDoctorMigrationCapture(
-        { expected: () => generation, assertCurrent() {}, accept() {}, refuse },
+        {
+          expected: () => generation,
+          migrationSource: () => generation,
+          assertCurrent() {},
+          accept() {},
+          refuse,
+        },
         () => {
           expect(() =>
             getDoctorMigrationBackup(database, {
@@ -176,7 +226,13 @@ it("preserves an uncaptured relocated source without certifying updater rollback
   });
   runWithDoctorMigrationBackup(backup, () =>
     runWithUpdateDoctorMigrationCapture(
-      { expected: () => undefined, assertCurrent() {}, accept() {}, refuse },
+      {
+        expected: () => undefined,
+        migrationSource: () => undefined,
+        assertCurrent() {},
+        accept() {},
+        refuse,
+      },
       () => {
         expect(
           getDoctorMigrationBackup(database, { path: pathname, env: {}, tables: ["retained"] }),
