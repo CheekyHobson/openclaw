@@ -1,5 +1,5 @@
 import { expectDefined } from "@openclaw/normalization-core";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { resolveProviderPluginChoice } from "../../plugins/provider-auth-choice.runtime.js";
 import {
   resolveProviderModelPickerEntries,
@@ -7,9 +7,6 @@ import {
 } from "../../plugins/provider-wizard.js";
 import type { ProviderAuthMethod } from "../plugin-entry.js";
 import type { ProviderPlugin } from "../provider-model-shared.js";
-
-const resolvePluginProvidersMock = vi.fn();
-let restoreProviderResolver: (() => void) | undefined;
 
 function createAuthMethod(
   params: Pick<ProviderAuthMethod, "id" | "label"> &
@@ -93,20 +90,6 @@ const TEST_PROVIDERS: ProviderPlugin[] = [
   },
 ];
 
-beforeEach(() => {
-  resolvePluginProvidersMock.mockReset();
-  resolvePluginProvidersMock.mockReturnValue(TEST_PROVIDERS);
-  restoreProviderResolver?.();
-  restoreProviderResolver = setProviderWizardProvidersResolverForTest((params) =>
-    resolvePluginProvidersMock(params),
-  );
-});
-
-afterEach(() => {
-  restoreProviderResolver?.();
-  restoreProviderResolver = undefined;
-});
-
 export function describeProviderWizardChoiceResolutionContract() {
   describe("provider wizard choice resolution contract", () => {
     it.each([
@@ -143,16 +126,23 @@ export function describeProviderWizardChoiceResolutionContract() {
 export function describeProviderWizardModelPickerContract() {
   describe("provider wizard model picker contract", () => {
     it("exposes every model-picker entry through the shared wizard layer", () => {
-      const entries = resolveProviderModelPickerEntries({ config: {}, env: process.env });
+      const restoreProviderResolver = setProviderWizardProvidersResolverForTest(
+        () => TEST_PROVIDERS,
+      );
+      try {
+        const entries = resolveProviderModelPickerEntries({ config: {}, env: process.env });
 
-      const values = entries.map((entry) => entry.value);
-      expect(values.toSorted()).toEqual(["beta", "provider-plugin:alpha:oauth"]);
-      expect(
-        values.every((choice) =>
-          Boolean(resolveProviderPluginChoice({ providers: TEST_PROVIDERS, choice })),
-        ),
-        values.join(", "),
-      ).toBe(true);
+        const values = entries.map((entry) => entry.value);
+        expect(values.toSorted()).toEqual(["beta", "provider-plugin:alpha:oauth"]);
+        expect(
+          values.every((choice) =>
+            Boolean(resolveProviderPluginChoice({ providers: TEST_PROVIDERS, choice })),
+          ),
+          values.join(", "),
+        ).toBe(true);
+      } finally {
+        restoreProviderResolver();
+      }
     });
   });
 }
