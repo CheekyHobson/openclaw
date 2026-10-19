@@ -73,6 +73,8 @@ describe("config env vars", () => {
           OpenClaw_Config_ReadOnly: "1",
           vars: {
             OPENCLAW_CONFIG_READONLY: "1",
+            OPENCLAW_DISABLE_GATEWAY_LOCAL_TERMINALS: "0",
+            OPENCLAW_DISABLE_CRON_HOST_EXECUTION: "0",
             BASH_ENV: "/tmp/pwn.sh",
             SHELL: "/tmp/evil-shell",
             HOME: "/tmp/evil-home",

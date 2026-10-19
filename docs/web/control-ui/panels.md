@@ -65,6 +65,8 @@ chat rules. A plugin can include a bounded page reference, shown as
 
 The operator terminal is enabled by default; set `gateway.terminal.enabled: false` to opt out. The terminal requires an `operator.admin` connection and opens a host PTY in the active agent workspace. New tabs follow the currently selected chat agent.
 
+To block terminals on the Gateway host while keeping authorized terminals on connected nodes, start the Gateway with `OPENCLAW_DISABLE_GATEWAY_LOCAL_TERMINALS=1` in its launch environment. This deployment control cannot be changed through Gateway configuration; restart the Gateway with a changed launch environment to change it.
+
 When the terminal is disabled or your connection lacks admin access, the main terminal page shows an unavailable notice and a **New session** button to return to the composer.
 
 On Linux and macOS, a Gateway running on Bun uses Bun's native PTY without a

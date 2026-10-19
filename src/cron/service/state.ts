@@ -114,6 +114,8 @@ export type CronServiceDeps = {
   cronConfig?: CronConfig;
   /** Host-owned, read-only diagnostics before startup recovery can dispatch loaded jobs. */
   describeJobLoadWarning?: (job: CronStoredJob) => string | undefined;
+  /** Disallow automation jobs that run commands or scripts on the host. */
+  hostExecutionDisabled?: boolean;
   /** List enabled, configured channel ids without exposing channel machinery to cron core. */
   listConfiguredChannels?: () => readonly string[] | Promise<readonly string[]>;
   evaluateCronTrigger?: (params: {
@@ -340,6 +342,30 @@ export type CronServiceState = {
   lastQuarantineFailureWarnKey: string | null;
   storeLoadedAtMs: number | null;
 };
+
+export function describeCronHostExecutionRestriction(
+  state: CronServiceState,
+  job: CronJob,
+): string | undefined {
+  if (
+    state.deps.hostExecutionDisabled &&
+    (job.payload.kind === "command" ||
+      job.payload.kind === "script" ||
+      job.schedule.kind === "on-exit" ||
+      job.schedule.kind === "stream" ||
+      job.trigger)
+  ) {
+    return "Gateway-hosted automation commands and scripts are disabled by OPENCLAW_DISABLE_CRON_HOST_EXECUTION";
+  }
+  return undefined;
+}
+
+export function assertCronHostExecutionAllowed(state: CronServiceState, job: CronJob): void {
+  const reason = describeCronHostExecutionRestriction(state, job);
+  if (reason) {
+    throw new TypeError(reason);
+  }
+}
 
 export function createCronServiceState(deps: CronServiceDeps): CronServiceState {
   // The public CronService constructor shipped before roster-aware callers.

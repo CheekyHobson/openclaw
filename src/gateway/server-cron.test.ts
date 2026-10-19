@@ -291,6 +291,7 @@ function buildGatewayCronService(
     typeof legacyStore === "string"
       ? {
           ...process.env,
+          ...params.env,
           OPENCLAW_SKIP_CRON: "0",
           OPENCLAW_STATE_DIR: path.dirname(legacyStore),
         }
@@ -577,6 +578,67 @@ describe("buildGatewayCronService", () => {
     loadCronService,
     createCronService,
     addCronJob,
+  });
+
+  it("disables Gateway-hosted automation execution while preserving timed agent turns", async () => {
+    const cfg = createCronConfig("server-cron-disabled-host-execution");
+    cfg.agents = { entries: { main: {} } };
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-14T12:00:00.000Z"));
+    const clock = createGatewaySchedulerClock(Date.now());
+    const previous = loadCronService({ ...cfg, cron: { ...cfg.cron, enabled: false } });
+    let restricted: CronServiceFixture | undefined;
+    const { spawn } = mockCronSupervisor();
+    try {
+      const command = await addCommandJob(previous, "persisted command", "process.exit(0)", {
+        schedule: { kind: "every", everyMs: 60_000, anchorMs: Date.now() },
+      });
+      const processJob = await addSystemEventJob(previous, "persisted process", "done", {
+        schedule: { kind: "on-exit", command: "sleep 60" },
+        sessionTarget: "main",
+      });
+      await addSystemEventJob(previous, "persisted stream", "event", {
+        schedule: { kind: "stream", command: ["source"] },
+        sessionTarget: "main",
+      });
+      await previous.cron.stopAndDrain?.();
+
+      restricted = loadCronService(cfg, {
+        env: { OPENCLAW_DISABLE_CRON_HOST_EXECUTION: "1" },
+        scheduler: createTestGatewayScheduler(clock.clock),
+      });
+      await restricted.cron.start();
+      await expect(restricted.cron.run(command.id, "force")).rejects.toThrow(
+        "OPENCLAW_DISABLE_CRON_HOST_EXECUTION",
+      );
+      await expect(addCommandJob(restricted, "new command", "process.exit(0)")).rejects.toThrow(
+        "OPENCLAW_DISABLE_CRON_HOST_EXECUTION",
+      );
+      const agent = await addAgentTurnJob(restricted, "scheduled agent", "run on schedule", {
+        schedule: { kind: "every", everyMs: 60_000, anchorMs: Date.now() },
+      });
+      await expect(
+        restricted.cron.update(agent.id, { payload: { kind: "command", argv: ["true"] } }),
+      ).rejects.toThrow("OPENCLAW_DISABLE_CRON_HOST_EXECUTION");
+
+      vi.setSystemTime(Date.now() + 60_000);
+      clock.setTime(Date.now());
+      await onCronTimer(getCronState(restricted));
+      await waitForCronRunQueue(getCronState(restricted));
+      expect(restricted.cron.getJob(command.id)?.state).toMatchObject({ lastStatus: "skipped" });
+      expect(restricted.cron.getJob(agent.id)?.state).toMatchObject({ lastStatus: "ok" });
+      expect(spawn).not.toHaveBeenCalled();
+      await expect(restricted.cron.update(command.id, { enabled: false })).resolves.toMatchObject({
+        enabled: false,
+      });
+      await expect(restricted.cron.remove(processJob.id)).resolves.toMatchObject({
+        ok: true,
+        removed: true,
+      });
+    } finally {
+      await (restricted ?? previous).cron.stopAndDrain?.();
+      vi.useRealTimers();
+    }
   });
 
   it("keeps sole-agent ownerless jobs dynamic across a restart and roster rename", async () => {

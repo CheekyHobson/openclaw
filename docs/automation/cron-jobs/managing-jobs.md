@@ -227,7 +227,9 @@ Automation jobs, run history, and quarantined malformed jobs live in the shared 
 
 Set `cron.skipMissedJobs: true` to skip recurring (`cron` and `every`) slots missed while the Gateway was offline. At startup, those jobs advance to their next future occurrence instead of catching up, avoiding stale reminders and unnecessary model calls at the cost of dropping missed work. The default is `false` (catch up); one-shot (`at`) jobs retain their normal catch-up behavior either way.
 
-Disable automations: `cron.enabled: false` or `OPENCLAW_SKIP_CRON=1`.
+Disable automatic runs: `cron.enabled: false` or `OPENCLAW_SKIP_CRON=1`. These settings do not prevent manual runs.
+
+To keep scheduled agent turns while blocking automation commands and scripts on the Gateway host, start the Gateway with `OPENCLAW_DISABLE_CRON_HOST_EXECUTION=1` in its launch environment. The Gateway refuses command and script payloads, condition triggers, and process-backed `on-exit` and `stream` schedules, including manual runs. Existing blocked jobs can still be disabled or removed. The restriction does not govern tools used by agent turns and cannot be changed through Gateway configuration; restart with a changed launch environment to change it.
 
 <AccordionGroup>
   <Accordion title="Retry behavior">

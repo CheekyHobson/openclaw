@@ -35,6 +35,7 @@ import { resolveCronSessionTargetSessionKey } from "../cron/session-target.js";
 import { createCronScriptRuntime } from "../cron/trigger-script.js";
 import type { CronJob } from "../cron/types.js";
 import { racePromiseWithAbortSignal } from "../infra/abort-signal.js";
+import { isTruthyEnvValue } from "../infra/env.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { resolveMainScopedEventSessionKey } from "../infra/event-session-routing.js";
 import type { GatewayScheduler } from "../infra/gateway-scheduler.js";
@@ -157,6 +158,7 @@ export function buildGatewayCronService(params: {
   const storePath = params.storePath;
   const cronEnabled =
     env.OPENCLAW_SKIP_CRON !== "1" && (params.cfg.cron?.enabled ?? DEFAULT_CRON_ENABLED);
+  const hostExecutionDisabled = isTruthyEnvValue(env.OPENCLAW_DISABLE_CRON_HOST_EXECUTION);
   // Resolve once per cron service snapshot so every webhook route shares the
   // same explicit opt-in while omitted config keeps the guard strict.
   const webhookSsrfPolicy = mergeSsrFPolicies(params.cfg.cron?.webhookSsrfPolicy);
@@ -282,7 +284,7 @@ export function buildGatewayCronService(params: {
       agentId: agentId ?? resolveSessionStoreCompatibilityAgentId(getRuntimeConfig()),
     });
   const sessionStorePath = resolveSessionStorePath(defaultAgentId);
-  const cronTriggersEnabled = params.cfg.cron?.triggers?.enabled !== false;
+  const cronTriggersEnabled = !hostExecutionDisabled && params.cfg.cron?.triggers?.enabled !== false;
   const scriptRuntime = cronTriggersEnabled
     ? createCronScriptRuntime({
         config: params.cfg,
@@ -350,7 +352,7 @@ export function buildGatewayCronService(params: {
       if (exitWatchersStopped || revision !== exitWatcherMutationRevision) {
         return;
       }
-      if (cronEnabled) {
+      if (cronEnabled && !hostExecutionDisabled) {
         exitWatchers.reconcile(jobs);
       } else {
         await exitWatchers.cancelAll();
@@ -468,6 +470,7 @@ export function buildGatewayCronService(params: {
     cronEnabled,
     cronConfig: params.cfg.cron,
     describeJobLoadWarning: (job) => describeCronInferenceMigration(getRuntimeConfig(), job),
+    hostExecutionDisabled,
     listConfiguredChannels: () => listConfiguredMessageChannels(getRuntimeConfig()),
     ...(scriptRuntime ? { evaluateCronTrigger: scriptRuntime.evaluateTrigger } : {}),
     ...(defaultAgentId ? { defaultAgentId } : {}),

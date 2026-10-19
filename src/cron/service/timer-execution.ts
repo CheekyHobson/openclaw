@@ -19,7 +19,7 @@ import type {
   CronTriggerEvalOutcome,
 } from "../types.js";
 import { abortErrorMessage, cronAbortErrorClassification } from "./execution-errors.js";
-import type { CronServiceState } from "./state.js";
+import { describeCronHostExecutionRestriction, type CronServiceState } from "./state.js";
 import {
   type ExecuteJobCoreOptions,
   resolveMainSessionCronDeliveryContext,
@@ -43,6 +43,10 @@ export async function executeJobCore(
   });
   if (abortSignal?.aborted) {
     return resolveAbortError();
+  }
+  const executionBlockReason = describeCronHostExecutionRestriction(state, job);
+  if (executionBlockReason) {
+    return { status: "skipped", error: executionBlockReason };
   }
   const execTargetRecoveryError = resolveCronToolsAllowExecTargetRecoveryError({
     jobId: job.id,
