@@ -102,7 +102,7 @@ const cronRunLogEntrySchema = z.looseObject({
 
 /** Native JSON parsing keeps released scalar/null and numeric-overflow semantics. */
 export function parseCronRunDetailJson(serialized: string): JsonValue | undefined {
-  // Native parsing can only produce JSON values; undefined denotes a syntax error.
+  // SAFETY: Native parsing only produces JSON values; undefined denotes a syntax error.
   return safeParseJson(serialized) as JsonValue | undefined;
 }
 
