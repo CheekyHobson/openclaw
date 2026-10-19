@@ -69,6 +69,7 @@ it.each([
         archivedAt: 1,
         visibility: "draft" as const,
         label: "Private worker",
+        color: "purple",
         permissionMode: "read-only" as const,
         sessionRoot: "/workspace",
         spawnedWorkspaceDir: "/workspace",
@@ -134,6 +135,7 @@ it.each([
         expect(fresh).toMatchObject({
           visibility: "draft",
           label: "Private worker",
+          color: "purple",
           sessionRoot: "/workspace",
           spawnedWorkspaceDir: "/workspace",
           spawnedCwd: "/workspace/task",
