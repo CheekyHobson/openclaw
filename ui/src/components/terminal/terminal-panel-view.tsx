@@ -9,12 +9,9 @@ import type { PanelEmptyStateElement, PanelEmptyStateProps } from "../solid/pane
 import { PanelIconButton } from "../solid/panel-icon-button.tsx";
 import { PanelLoadingSkeleton } from "../solid/panel-loading-skeleton.tsx";
 import "../solid/panel-empty-state.tsx";
-import {
-  terminalPanelTabIcon,
-  terminalPanelHostedTabs,
-} from "./terminal-panel-tabs.tsx";
+import { terminalPanelTabIcon, terminalPanelHostedTabs } from "./terminal-panel-tabs.tsx";
 import { Actions, SessionMenu, TerminalRail } from "./terminal-panel-view-chrome.tsx";
-import type { TerminalPanelOwner } from "./terminal-panel.ts";
+import type { TerminalPanelViewState } from "./terminal-panel-view-types.ts";
 
 declare module "@solidjs/web" {
   namespace JSX {
@@ -26,8 +23,6 @@ declare module "@solidjs/web" {
     }
   }
 }
-
-export type TerminalPanelViewState = TerminalPanelOwner["viewState"];
 
 function UploadLayer(props: { state: TerminalPanelViewState }) {
   const progress = createMemo(() => props.state.upload.progress());
