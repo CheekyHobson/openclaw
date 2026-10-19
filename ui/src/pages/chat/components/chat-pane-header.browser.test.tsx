@@ -7,12 +7,11 @@ import {
   selectChatLayoutAction,
 } from "../../../test-helpers/chat-layout-menu.ts";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
-import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
+import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import "../../../styles.css";
 import "../../../styles/chat/startup-layout.css";
 import "../../../styles/chat/layout.css";
 import "../../../styles/chat/split-view.css";
-import { flush } from "../../../test-helpers/solid-settle.ts";
 import { openSlot, setSidebarOpen } from "../sidebar-layout.ts";
 import {
   chatPaneHeaderSharing,
