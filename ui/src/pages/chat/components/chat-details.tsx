@@ -136,12 +136,7 @@ export const ChatDetails = defineSolidBridge<Props, Methods>(
       mobile: props.mobile,
       conversationVisible: props.conversationVisible ?? true,
       externalTrigger: props.externalTrigger ?? false,
-      elements: {
-        pane: props.elements?.pane,
-        header: props.elements?.header,
-        frame: props.elements?.frame,
-        footer: props.elements?.footer,
-      },
+      elements: props.elements,
       presentation: presentation(),
       mobileHost: Boolean(props.mobileHost),
       detailsMount: props.mobileHost?.detailsMount,

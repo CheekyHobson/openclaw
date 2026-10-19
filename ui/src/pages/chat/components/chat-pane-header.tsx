@@ -82,10 +82,10 @@ export function ChatPaneHeader(props: ChatPaneHeaderProps) {
   onCleanup(() => props.setDashboardControls?.(undefined));
   const incognito = () =>
     (props.incognito ?? props.session?.incognito) || isIncognitoSessionKey(props.session?.key);
-  const details = (
-    placement: Parameters<typeof ChatPanePlacement>[0],
-    onOpenMachine: () => void,
-  ) => (
+  const Details = (detailsProps: {
+    placement: Parameters<typeof ChatPanePlacement>[0];
+    onOpenMachine: () => void;
+  }) => (
     <Show when={props.detailsControl !== undefined}>
       <PaneDetails
         {...props.detailsControl!}
@@ -95,10 +95,10 @@ export function ChatPaneHeader(props: ChatPaneHeaderProps) {
                 ...props.detailsControl!.chat,
                 environment: {
                   ...props.detailsControl!.chat.environment,
-                  placement,
+                  placement: detailsProps.placement,
                   onOpenMachine:
                     props.detailsControl?.nativePresentation === "mobile"
-                      ? onOpenMachine
+                      ? detailsProps.onOpenMachine
                       : undefined,
                 },
               }
@@ -132,7 +132,7 @@ export function ChatPaneHeader(props: ChatPaneHeaderProps) {
   return (
     <ChatPaneMobileComposition
       header={props}
-      details={details}
+      details={Details}
       notice={notice}
       fallback={(sessionMenu, machineName, mountedDetails) => (
         <ChatPaneHeaderChrome

@@ -456,8 +456,8 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
               ) {
                 return undefined;
               }
-              const { requestPlaceCatalog } = await import("../new-session/cloud-target.ts");
               try {
+                const { requestPlaceCatalog } = await import("../new-session/cloud-target.ts");
                 const placeCatalog = await requestPlaceCatalog(scope.client, row?.agentRuntime?.id);
                 if (!this.ownsHeaderOutcomeScope(scope)) {
                   return undefined;
