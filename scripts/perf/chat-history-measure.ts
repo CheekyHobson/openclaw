@@ -19,6 +19,7 @@ import { PROTOCOL_VERSION } from "../../packages/gateway-protocol/src/version.ts
 import { isRecord } from "../../packages/normalization-core/src/record-coerce.ts";
 import type { OpenClawConfig } from "../../src/config/types.openclaw.ts";
 import { stopChild } from "../lib/gateway-bench-child.ts";
+import { controlGatewayProfile } from "../lib/gateway-bench-profile.ts";
 import { BASE_GATEWAY_BENCH_CONFIG, createGatewayBenchEnv } from "../lib/gateway-bench-runtime.ts";
 import { createGatewayWsClient } from "../lib/gateway-ws-client.ts";
 import { parseStrictIntegerOption } from "../lib/strict-integer-option.ts";
@@ -38,7 +39,7 @@ const sessionId = "chat-history-measure-820";
 const sessionKey = `agent:main:${sessionId}`;
 const fixtureFormat = "openclaw-chat-history-measure-v1";
 const fixtureEpoch = 1_792_281_600_000;
-const token = "synthetic-chat-history-measure-token";
+const fixtureUser = "history-benchmark@example.invalid";
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 
 function syntheticText(message: number, size: number): string {
@@ -55,7 +56,7 @@ function fixtureMessages() {
     const common = { timestamp: fixtureEpoch + index * 1000 };
     const message =
       index % 4 === 0
-        ? { ...common, role: "user", content: [{ type: "text", text: syntheticText(index, 4800) }] }
+        ? { ...common, role: "user", content: [{ type: "text", text: syntheticText(index, 3650) }] }
         : index % 4 === 1
           ? {
               ...common,
@@ -107,11 +108,20 @@ function configFor(root: string, port: number): OpenClawConfig {
     gateway: {
       ...BASE_GATEWAY_BENCH_CONFIG.gateway,
       port,
-      auth: { mode: "token", token },
+      // Direct-local ingress intentionally disables compression; model a loopback proxy.
+      trustedProxies: ["127.0.0.1"],
+      auth: {
+        mode: "trusted-proxy",
+        identityScopes: { [fixtureUser]: ["operator.admin"] },
+        trustedProxy: {
+          allowLoopback: true,
+          userHeader: "x-forwarded-user",
+          allowUsers: [fixtureUser],
+        },
+      },
       controlUi: {
         enabled: false,
         allowedOrigins: [`http://127.0.0.1:${port}`],
-        dangerouslyDisableDeviceAuth: true,
       },
     },
   };
@@ -196,7 +206,12 @@ const variants = [
     method: "chat.history",
     params: { offset: 661, limit: 1000, maxBytes: 2 * 1024 * 1024 },
   },
-  { name: "startup", method: "chat.startup", params: { limit: 80, maxBytes: 256 * 1024 } },
+  {
+    name: "startup",
+    method: "chat.startup",
+    params: { limit: 80, maxBytes: 256 * 1024, knownState: {} },
+  },
+  { name: "startup-cached", method: "chat.startup", params: { limit: 80, maxBytes: 256 * 1024 } },
   {
     name: "history-startup-sized",
     method: "chat.history",
@@ -245,12 +260,26 @@ async function measure(root: string, port: number, samples: number) {
       "Gateway runtime is not built; prepare it on the benchmark host",
     );
   }
+  const buildInfo: unknown = JSON.parse(
+    readFileSync(
+      path.join(
+        path.dirname(entry),
+        path.basename(entry) === "openclaw.mjs" ? "dist/build-info.json" : "build-info.json",
+      ),
+      "utf8",
+    ),
+  );
+  assert.ok(
+    isRecord(buildInfo) && typeof buildInfo.buildId === "string",
+    "Missing Gateway build identity",
+  );
   const output = path.resolve(values.output ?? path.join(root, `measurement-${Date.now()}`));
   mkdirSync(output);
   const timelinePath = path.join(output, "timeline.jsonl");
   const rpcPath = path.join(output, "rpc.jsonl");
   const preloadPath = path.join(output, "diagnostics-preload.mjs");
   const runtimeConfigPath = path.join(output, "openclaw.json");
+  const requestProfilePath = path.join(output, "requests.cpuprofile");
   writeFileSync(runtimeConfigPath, `${JSON.stringify(configFor(root, port), null, 2)}\n`);
   writeFileSync(rpcPath, "");
   writeFileSync(
@@ -292,6 +321,8 @@ if (isMainThread) onInternalDiagnosticEvent(event => {
         path.resolve("scripts/tsx.mjs"),
         "--import",
         preloadPath,
+        "--import",
+        path.resolve("scripts/lib/gateway-bench-profile-preload.ts"),
         entry,
         "gateway",
         "run",
@@ -299,10 +330,6 @@ if (isMainThread) onInternalDiagnosticEvent(event => {
         String(port),
         "--bind",
         "loopback",
-        "--auth",
-        "token",
-        "--token",
-        token,
         "--allow-unconfigured",
       ],
       {
@@ -313,7 +340,7 @@ if (isMainThread) onInternalDiagnosticEvent(event => {
           OPENCLAW_DIAGNOSTICS_TIMELINE_PATH: timelinePath,
         },
         detached: true,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "pipe", "ipc"],
       },
     );
     gateway.stdout?.pipe(log, { end: false });
@@ -344,6 +371,7 @@ if (isMainThread) onInternalDiagnosticEvent(event => {
     client = createGatewayWsClient({
       url: `ws://127.0.0.1:${port}`,
       origin: `http://127.0.0.1:${port}`,
+      headers: { "x-forwarded-for": "192.0.2.1", "x-forwarded-user": fixtureUser },
     });
     const rawResponses = new Map<string, string>();
     client.ws.on("message", (data) => {
@@ -364,6 +392,7 @@ if (isMainThread) onInternalDiagnosticEvent(event => {
         maxProtocol: PROTOCOL_VERSION,
         client: {
           id: "openclaw-control-ui",
+          buildId: buildInfo.buildId,
           version: "synthetic-benchmark",
           platform: "web",
           mode: "ui",
@@ -371,15 +400,27 @@ if (isMainThread) onInternalDiagnosticEvent(event => {
         role: "operator",
         scopes: ["operator.read", "operator.write", "operator.admin"],
         caps: [],
-        auth: { token },
       },
       60_000,
     );
     assert.ok(connected.ok, `Synthetic connect rejected: ${JSON.stringify(connected.error)}`);
     rawResponses.clear();
-    for (let sample = -1; sample < samples; sample++) {
+    let warmStartup: { cursor: string; knownState: Record<string, unknown> } | undefined;
+    for (let sample = -3; sample < samples; sample++) {
+      if (sample === 0) {
+        await controlGatewayProfile(gateway, "cpu", "start", requestProfilePath, {
+          includeWorkers: true,
+        });
+      }
       for (const variant of variants) {
-        const params = { sessionKey, agentId: "main", toolResultMaxChars: 2000, ...variant.params };
+        if (variant.name === "startup-cached") assert.ok(warmStartup);
+        const params = {
+          sessionKey,
+          agentId: "main",
+          toolResultMaxChars: 2000,
+          ...variant.params,
+          ...(variant.name === "startup-cached" ? warmStartup : {}),
+        };
         const started = performance.now();
         const response = await client.request(variant.method, params, 60_000);
         const elapsedMs = performance.now() - started;
@@ -389,9 +430,16 @@ if (isMainThread) onInternalDiagnosticEvent(event => {
         );
         const payload = response.payload;
         assert.ok(
-          Array.isArray(payload.messages) && payload.messages.length > 0,
-          "History fixture returned no messages",
+          Array.isArray(payload.messages) &&
+            (variant.name === "startup-cached"
+              ? payload.messages.length === 0
+              : payload.messages.length > 0),
+          "History fixture returned unexpected messages",
         );
+        if (variant.name === "startup") {
+          assert.ok(typeof payload.deltaCursor === "string" && isRecord(payload.stateRevision));
+          warmStartup = { cursor: payload.deltaCursor, knownState: payload.stateRevision };
+        }
         const raw = rawResponses.get(response.id);
         assert.ok(raw, "Missing raw response frame");
         rawResponses.delete(response.id);
@@ -418,6 +466,7 @@ if (isMainThread) onInternalDiagnosticEvent(event => {
         });
       }
     }
+    await controlGatewayProfile(gateway, "cpu", "stop", requestProfilePath);
   } finally {
     await cleanup();
     process.off("SIGINT", onSignal);
@@ -470,8 +519,8 @@ if (isMainThread) onInternalDiagnosticEvent(event => {
     samples,
     output,
     cpuProfiles: readdirSync(output).filter((name) => name.endsWith(".cpuprofile")),
-    warmup: results.filter((record) => record.sample === -1),
-    results: results.filter((record) => record.sample !== -1),
+    warmup: results.filter((record) => record.sample < 0),
+    results: results.filter((record) => record.sample >= 0),
   };
   assert.ok(report.cpuProfiles.length > 0, "Gateway did not write its CPU profile");
   writeFileSync(path.join(output, "result.json"), `${JSON.stringify(report, null, 2)}\n`);
