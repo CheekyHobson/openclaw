@@ -38,7 +38,7 @@ type ChannelGateway = {
   subscribeEvents: (listener: GatewayEventListener) => () => void;
 };
 
-export type ChannelsState = {
+type ChannelsState = {
   client: ChannelGatewayClient | null;
   connected: boolean;
   channelsLoading: boolean;
