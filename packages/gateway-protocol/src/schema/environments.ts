@@ -1,3 +1,4 @@
+// Gateway Protocol schema module defines protocol validation shapes.
 import { Type, type Static } from "typebox";
 import { NODE_WORKER_CAPACITY_MAX } from "../worker-capacity.js";
 import { closedObject } from "./closed-object.js";

@@ -1,3 +1,4 @@
+/** OpenAI Responses transport facade. */
 export {
   createAzureOpenAIResponsesTransportStreamFn,
   createOpenAIResponsesTransportStreamFn,

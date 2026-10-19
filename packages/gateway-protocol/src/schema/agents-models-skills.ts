@@ -1,3 +1,4 @@
+// Gateway Protocol schema module defines protocol validation shapes.
 import type { Static } from "typebox";
 import { Type } from "typebox";
 import { AgentDatabaseAdmissionRefusalSchema } from "./agent-database-admission.js";

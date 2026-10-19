@@ -1,3 +1,4 @@
+/** Shared provider diagnostics. */
 export * from "@openclaw/llm-core/diagnostics";
 export { isResponsesOutputLimitToolCallError } from "../providers/openai-responses-terminal-usage.js";
 export { resolveResponsesOutputIdentityRetry } from "../transports/openai-responses-stream-errors.js";

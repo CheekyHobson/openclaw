@@ -5,6 +5,8 @@ import {
   resolveEffectiveHomeDir,
 } from "@openclaw/normalization-core/home-dir";
 
+// Display-safe string helpers for shortening user home paths.
+
 /** Resolve the display prefix that should replace the effective home path. */
 function resolveHomeDisplayPrefix(): { home: string; prefix: string } | undefined {
   const home = resolveEffectiveHomeDir(process.env, os.homedir, {

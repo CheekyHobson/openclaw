@@ -16,6 +16,7 @@ type GatewayStartupUnavailableDetails = {
   reason: typeof GATEWAY_STARTUP_UNAVAILABLE_REASON;
 };
 
+/** Builds the canonical startup-unavailable details payload. */
 export function gatewayStartupUnavailableDetails(): GatewayStartupUnavailableDetails {
   return { reason: GATEWAY_STARTUP_UNAVAILABLE_REASON };
 }

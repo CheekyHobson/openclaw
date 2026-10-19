@@ -1,3 +1,4 @@
+/** Provider transport implementations and transport-specific compatibility helpers. */
 export type {
   CompactionReplayRejection,
   OpenAIResponsesCompactionRejection,
