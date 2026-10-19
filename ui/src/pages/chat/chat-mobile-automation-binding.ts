@@ -199,10 +199,10 @@ export function createMobileAutomationBinding(props: {
       return scope();
     },
     keyed: true,
-    children: (value) => {
+    children: (capturedScope) => {
       onSettled(() => {
-        const [client, connected, , id, agent, readAccess] = value;
-        boundScope = value;
+        const [client, connected, , id, agent, readAccess] = capturedScope;
+        boundScope = capturedScope;
         transcript.close();
         const captured = createInitialCronState({ client, connected });
         state = captured;
