@@ -345,7 +345,13 @@ export function projectDiagnosticValue(
         continue;
       }
       const childMedia = media?.kind === "context";
-      out[key] = projectDiagnosticValue(child, policy, seen, childMedia, state);
+      const projected = projectDiagnosticValue(child, policy, seen, childMedia, state);
+      // A data field must not install inherited serialization hooks on the output.
+      if (key === "__proto__") {
+        state.changed = true;
+        continue;
+      }
+      out[key] = projected;
     }
     return out;
   } catch {

@@ -121,6 +121,26 @@ describe("trajectory tool definition preparation", () => {
     expect(toJSON).not.toHaveBeenCalled();
   });
 
+  it("does not install inherited serialization hooks from prototype-named fields", async () => {
+    const writes: string[] = [];
+    const toJSON = vi.fn(() => ({ unexpected: true }));
+    vi.spyOn(runtimeStoreWriter, "createSqliteTrajectoryRuntimeSink").mockResolvedValueOnce({
+      write: (_event, line) => writes.push(line),
+      flush: async () => {},
+      describeFlushState: () => undefined,
+    });
+    const recorder = await createTrajectoryRuntimeRecorder({ sessionId: "prototype-field" });
+
+    recorder?.recordEvent("context.compiled", {
+      ["__proto__"]: { toJSON },
+      nested: { ["__proto__"]: { toJSON }, ordinary: "kept" },
+    });
+
+    expect(toJSON).not.toHaveBeenCalled();
+    expect(writes).toHaveLength(1);
+    expect(JSON.parse(writes[0]!).data).toEqual({ nested: { ordinary: "kept" } });
+  });
+
   it("keeps descriptor safety for copies exposed to custom array callbacks", () => {
     const getter = vi.fn(() => "must not be read");
     const parameters = Object.defineProperty([], "slice", {
