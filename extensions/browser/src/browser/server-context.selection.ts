@@ -246,6 +246,7 @@ export function createProfileSelectionOps({
   const focusTab = async (targetId: string, options?: BrowserTabTargetOptions): Promise<void> => {
     const resolvedTargetId = await resolveTargetIdOrThrow(targetId, options);
     const focus = await prepareTabOperation("focus", resolvedTargetId, options);
+    await resolveTargetIdOrThrow(resolvedTargetId, { ...options, exactTargetId: true });
     options?.signal?.throwIfAborted();
     await focus();
     runtime.lastTargetId = resolvedTargetId;
@@ -255,10 +256,19 @@ export function createProfileSelectionOps({
     const resolvedTargetId = await resolveTargetIdOrThrow(targetId, options);
     const close = await prepareTabOperation("close", resolvedTargetId, options);
     options?.signal?.throwIfAborted();
-    await dispatchBrowserTabClose(resolvedTargetId, profile.name, () => {
-      options?.signal?.throwIfAborted();
-      return close();
-    });
+    await dispatchBrowserTabClose(
+      resolvedTargetId,
+      profile.name,
+      () => {
+        options?.signal?.throwIfAborted();
+        return close();
+      },
+      {
+        assertCurrent: async () => {
+          await resolveTargetIdOrThrow(resolvedTargetId, { ...options, exactTargetId: true });
+        },
+      },
+    );
 
     if (runtime.lastTargetId === resolvedTargetId) {
       // Retire only the closed sticky identity; otherwise an unprovable session

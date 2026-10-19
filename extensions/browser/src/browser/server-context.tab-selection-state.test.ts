@@ -155,6 +155,22 @@ async function labeled() {
 }
 
 describe("browser tab selection and ownership", () => {
+  it.each(["focusTab", "closeTab"] as const)(
+    "refuses %s when the selected tab navigates to the Control UI before dispatch",
+    async (operation) => {
+      setRuntimeConfigSnapshot({ gateway: { publicOrigin: "https://control.example" } });
+      let reads = 0;
+      const { openclaw, runtime, fetchMock } = listOnly(() => [
+        page("APPROVAL", reads++ === 0 ? "about:blank" : "https://control.example/approvals"),
+      ]);
+      await expect(openclaw[operation]("APPROVAL")).rejects.toThrow(
+        "cannot access this Gateway's Control UI",
+      );
+      expect(runtime.lastTargetId).toBeNull();
+      expect(fetchMock.mock.calls.every(([url]) => String(url).includes("/json/list"))).toBe(true);
+    },
+  );
+
   it.each(["ensureTabAvailable", "focusTab", "closeTab"] as const)(
     "refuses %s on an existing Control UI tab before browser effects",
     async (operation) => {
