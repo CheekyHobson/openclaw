@@ -1,6 +1,3 @@
-/**
- * Handles lifecycle and compaction events from subscribed embedded-agent sessions.
- */
 import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 import { projectChatErrorDetail } from "../../packages/gateway-protocol/src/schema/logs-chat.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
@@ -13,11 +10,11 @@ import {
   buildApiErrorObservationFields,
   buildTextObservationFields,
 } from "./embedded-agent-error-observation.js";
+import { classifyAssistantFailoverReason } from "./embedded-agent-helpers/assistant-message-failures.js";
 import {
-  classifyAssistantFailoverReason,
   formatUserFacingAssistantErrorText,
   GENERIC_ASSISTANT_ERROR_TEXT,
-} from "./embedded-agent-helpers.js";
+} from "./embedded-agent-helpers/error-text.js";
 import { hasCommittedMessagingToolDeliveryEvidence } from "./embedded-agent-runner/delivery-evidence.js";
 import {
   hasAttemptTerminalState,
@@ -110,8 +107,7 @@ export function handleAgentEnd(
   // Classification must key on the same fact, otherwise a delivered reply is
   // recorded here as an abandoned, replay-invalid turn. Error and abort stop
   // reasons keep the streamed-only view because their raw text can describe an
-  // interrupted generation rather than a reply (mirrors
-  // resolveTerminalAssistantTexts).
+  // interrupted generation rather than a reply (mirrors attempt finalization).
   const hasStreamedAssistantVisibleText = ctx.state.assistantTexts.some((text) =>
     hasAssistantVisibleReply({ text }),
   );

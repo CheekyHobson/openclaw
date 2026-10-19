@@ -96,6 +96,7 @@ the development proxy preserves the browser's Origin and does not provide
 authentication credentials.
 
 Vite serves the UI and its hot reload connection, and proxies Gateway requests.
+If the Gateway disconnects, the proxy retires that connection so the UI can reconnect without restarting Vite.
 The UI keeps credentials and saved settings scoped to the actual Gateway. An
 owner pairing handoff can be delivered on the dev page while retaining its
 original Gateway destination and fragment. To use another Gateway, restart
@@ -161,6 +162,12 @@ scope cancels queued background work.
 
 The `chat-stream-runtime-budgets.e2e.test.ts` suite protects streaming with
 structural update counts; chat-page unit tests cover intervening roster publications.
+
+Session descriptors share connection-scoped reads. Full row changes invalidate
+them; unchanged ancestor references reuse the settled read. Swarm progress follows
+the collector's parent summary, not a child provider's terminal status. Child rows
+already update their own presentation, while changed collector summaries and
+membership still refresh the parent details.
 
 Shell callbacks retain their identity across renders so a background session update
 does not redraw navigation twice. The outbox subscription still invalidates draft

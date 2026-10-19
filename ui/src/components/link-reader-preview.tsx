@@ -16,6 +16,7 @@ import { formatGitHubItemReference, parseGitHubLinkTarget } from "./github-link-
 import { createPreviewRenderer } from "./link-reader-preview-root.ts";
 import { linkReaderAuthorHref, linkReaderResponseMatchesTarget } from "./link-reader-response.ts";
 import { linkReaderTargetKey, type LinkReaderTarget } from "./link-reader-target.ts";
+import { createHovercardControlRef } from "./portaled-hovercard-focus.ts";
 import { BrandIcon, Icon } from "./solid/icon.tsx";
 export type LinkPreview = LinkReaderTarget & ControlUiLinkReaderPreview;
 
@@ -125,6 +126,7 @@ export function cacheEntryFromDocument(
   });
   return {
     preview,
+    generation: previous?.generation,
     enrichment: previous?.preview && !previous.enrichment ? undefined : "needed",
     promise: Promise.resolve(preview),
     expiresAt,
@@ -271,6 +273,7 @@ function CardLink(props: {
 }) {
   return (
     <a
+      ref={createHovercardControlRef()}
       class={props.class}
       href={props.href}
       target={EXTERNAL_LINK_TARGET}
@@ -465,6 +468,7 @@ export function renderPreview(
 }
 
 export type CacheEntry = {
+  generation: number | undefined;
   enrichment?: "needed" | "pending";
   preview?: ControlUiLinkReaderPreview;
   expiresAt: number;
@@ -474,7 +478,6 @@ export type CacheEntry = {
 };
 
 export type PreviewContext = {
-  generation: number;
   recoveryScope: string;
   succeeded: boolean;
 };
@@ -493,13 +496,8 @@ export function previewContextFor(
   }
   const key = agentId ?? "";
   let context = contexts.get(key);
-  if (
-    !context ||
-    context.generation !== client.connectionGeneration ||
-    context.recoveryScope !== client.recoveryScope
-  ) {
+  if (!context || context.recoveryScope !== client.recoveryScope) {
     context = {
-      generation: client.connectionGeneration,
       recoveryScope: client.recoveryScope,
       succeeded: false,
     };

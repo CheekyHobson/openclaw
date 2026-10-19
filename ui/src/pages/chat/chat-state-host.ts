@@ -38,7 +38,6 @@ export type ChatPageHost = ChatHost &
   ChatRealtimeState &
   PullRequestRefreshHost &
   SessionWorkspaceHost & {
-    requestUpdate: () => void;
     reviewQueuedMessageEdit?: () => void;
     captureComposerRecoveryReload?: () => () => Promise<boolean>;
     chatMetadataIsPresented?: () => boolean;
@@ -103,7 +102,6 @@ export type ChatPageHost = ChatHost &
     updateSidebarActivePanel: (panelId: string) => void;
     imageLightbox: ImageLightboxItem | null;
     imageLightboxRequestVersion: number;
-    querySelector: (selectors: string) => Element | null;
     resetToolStream: () => void;
     resetChatInputHistoryNavigation: () => void;
     scrollToBottom: (opts?: { smooth?: boolean }) => void;
@@ -132,7 +130,7 @@ export type ChatPageHost = ChatHost &
         persist?: boolean;
         dashboardPresentation?: "personal";
         geometryOnly?: boolean;
-        automaticResource?: "desktop" | "browser";
+        automaticResource?: "desktop";
       },
     ) => void;
     beginImageOpen: () => number;
