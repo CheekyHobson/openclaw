@@ -35,6 +35,7 @@ import {
 import { rebindCliSessionReseedReceiptsForReset } from "../config/sessions/cli-session-binding.js";
 import { formatSqliteSessionFileMarker } from "../config/sessions/legacy-sqlite-marker.js";
 import { resolveCanonicalMainSessionKey } from "../config/sessions/main-session-key.js";
+import { preserveSessionExecutionContext } from "../config/sessions/reset-preserved-execution.js";
 import { preserveResetSessionPresentation } from "../config/sessions/reset-preserved-presentation.js";
 import { resolveResetPreservedSelection } from "../config/sessions/reset-preserved-selection.js";
 import {
@@ -854,10 +855,7 @@ async function performPreparedGatewaySessionReset({
                 ? undefined
                 : currentEntry?.execNode;
             const creationStamp = currentEntry
-              ? {
-                  ...preserveCreationStamp({}, currentEntry),
-                  projectId: currentEntry.projectId,
-                }
+              ? preserveCreationStamp({}, currentEntry)
               : params.creation
                 ? {
                     ...buildSessionCreationStamp(params.creation),
@@ -867,6 +865,7 @@ async function performPreparedGatewaySessionReset({
                   }
                 : {};
             const nextEntry: InternalSessionEntry = {
+              ...preserveSessionExecutionContext(currentEntry),
               sessionId: nextSessionId,
               lifecycleRevision: randomUUID(),
               updatedAt: now,
@@ -876,11 +875,9 @@ async function performPreparedGatewaySessionReset({
               contextWindow: currentEntry?.contextWindow,
               thinkingLevel: currentEntry?.thinkingLevel,
               fastMode: params.fastModeSelection?.value ?? currentEntry?.fastMode,
-              toolOverrides: currentEntry?.toolOverrides,
               verboseLevel: currentEntry?.verboseLevel,
               traceLevel: currentEntry?.traceLevel,
               reasoningLevel: currentEntry?.reasoningLevel,
-              elevatedLevel: currentEntry?.elevatedLevel,
               ttsAuto: currentEntry?.ttsAuto,
               execHost: params.execNode
                 ? "node"
@@ -909,14 +906,11 @@ async function performPreparedGatewaySessionReset({
               groupActivationNeedsSystemIntro: currentEntry?.groupActivationNeedsSystemIntro,
               chatType: currentEntry?.chatType,
               compactionCount: 0,
-              sendPolicy: currentEntry?.sendPolicy,
               queueMode: currentEntry?.queueMode,
               queueDebounceMs: currentEntry?.queueDebounceMs,
               queueCap: currentEntry?.queueCap,
               queueDrop: currentEntry?.queueDrop,
               ...preserveSessionLineage(currentEntry),
-              completionOwnerSessionKey: currentEntry?.completionOwnerSessionKey,
-              spawnedWorkspaceDir: currentEntry?.spawnedWorkspaceDir,
               spawnedCwd: params.clearSpawnedCwd
                 ? undefined
                 : (preparedLifecycle?.spawnedCwd ?? params.spawnedCwd ?? currentEntry?.spawnedCwd),
@@ -928,17 +922,11 @@ async function performPreparedGatewaySessionReset({
               permissionMode: params.clearSpawnedCwd
                 ? undefined
                 : (params.permissionMode ?? currentEntry?.permissionMode),
-              // Reset keeps this logical chat's authorized containment choice.
-              sandboxMode: currentEntry?.sandboxMode,
               worktree: params.clearSpawnedCwd
                 ? undefined
                 : (preparedLifecycle?.worktree ?? currentEntry?.worktree),
               repositoryWorkspaceId:
                 preparedLifecycle?.repositoryWorkspaceId ?? currentEntry?.repositoryWorkspaceId,
-              // Placement can be retired by reset; the logical chat must still stay on its device.
-              deviceFolder: currentEntry?.deviceFolder
-                ? { ...currentEntry.deviceFolder }
-                : undefined,
               ...creationStamp,
               delivery: currentEntry?.delivery,
               pendingDeliveryNotice: currentEntry?.pendingDeliveryNotice,
