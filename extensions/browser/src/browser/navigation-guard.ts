@@ -38,7 +38,7 @@ function browserUrlUsesGatewayPort(url: URL): boolean {
 }
 
 /** Keep this Gateway's human decision surface out of its browser automation. */
-export function assertBrowserControlUiOriginAllowed(
+function assertBrowserControlUiOriginAllowed(
   rawUrl: string,
   resolvedAddresses: readonly string[] = [],
 ): void {
