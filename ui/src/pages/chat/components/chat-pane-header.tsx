@@ -44,13 +44,12 @@ import {
 } from "../../../lib/sessions/session-key.ts";
 import { nativeListener } from "../../../lib/solid-native-listener.ts";
 import {
-  PaneDetails,
   PaneHeaderPresence,
   PaneHeaderSessionMenu,
   PaneSubagentStop,
-  type PaneDetailsProps,
 } from "../chat-pane-header-view.tsx";
 import { usePanePresentation } from "../chat-pane-presentation.ts";
+import { ChatDetails, type ChatDetailsViewProps } from "./chat-details.tsx";
 import { ChatPaneLayoutMenu, type ChatPaneLayoutMenuProps } from "./chat-header-panel-actions.tsx";
 import { ChatPanePlacement } from "./chat-pane-placement.tsx";
 import { ChatPaneVersionsMenu } from "./chat-pane-versions-menu.tsx";
@@ -107,7 +106,7 @@ export type ChatPaneHeaderProps = ChatPaneLayoutMenuProps & {
   copiedAction: ChatPaneHeaderAction | null;
   renameDisabledReason?: string;
   runningSubagentCount?: number;
-  detailsControl?: PaneDetailsProps;
+  detailsControl?: ChatDetailsViewProps;
   onOpenDetails?: (source: HTMLElement) => void;
   conversationVisible?: boolean;
   onToggleConversation?: () => void;
@@ -581,7 +580,7 @@ export function ChatPaneHeader(props: ChatPaneHeaderProps) {
             </button>
           </Show>
           <Show when={props.detailsControl !== undefined}>
-            <PaneDetails {...props.detailsControl!} />
+            <ChatDetails {...props.detailsControl!} />
           </Show>
           {/* The observed row (and its menu) retires offline; cached Details stays local. */}
           <Show

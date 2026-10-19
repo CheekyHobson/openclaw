@@ -11,14 +11,13 @@ import "../../../styles.css";
 import "../../../styles/chat/startup-layout.css";
 import "../../../styles/chat/layout.css";
 import "../../../styles/chat/split-view.css";
+import { flush } from "../../../test-helpers/solid-settle.ts";
 import { openSlot, setSidebarOpen } from "../sidebar-layout.ts";
-import type { ChatDetails } from "./chat-details.tsx";
 import {
   chatPaneHeaderSharing,
   chatPaneHeaderSessionMenu,
   mountChatPaneHeader,
 } from "./chat-pane-header.test-support.ts";
-import "./chat-details.tsx";
 import { ChatSidebarEditorMenu } from "./chat-sidebar-editor-menu.tsx";
 
 describe.skipIf(typeof HTMLElement.prototype.checkVisibility !== "function")(
@@ -356,7 +355,7 @@ describe.skipIf(typeof HTMLElement.prototype.checkVisibility !== "function")(
         });
         container.style.width = `${width}px`;
         const header = container.querySelector<HTMLElement>(".chat-pane__header")!;
-        await container.querySelector<ChatDetails>("openclaw-chat-details")?.updateComplete;
+        flush();
         await expect.element(page.elementLocator(header)).toBeVisible();
         expect(header.scrollWidth).toBeLessThanOrEqual(header.clientWidth);
         const bounds = header.getBoundingClientRect();
