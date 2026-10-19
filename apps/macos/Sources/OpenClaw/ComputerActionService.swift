@@ -307,7 +307,7 @@ final class ComputerActionExecutionQueue {
     }
 
     @discardableResult
-    private func attemptInputRelease(inputScopeId: UUID?) -> Bool {
+    fileprivate func attemptInputRelease(inputScopeId: UUID?) -> Bool {
         let released = self.onInputRelease(inputScopeId)
         if let inputScopeId {
             if released {
@@ -496,8 +496,8 @@ final class ComputerActionService {
         checkScopeAllowed: @escaping @MainActor () throws -> Void = {}) async throws -> OpenClawComputerActResult
     {
         try checkScopeAllowed()
-        try ApprovalPromptState.shared.checkComputerAction(params.action)
         let scope = inputScopeId ?? self.defaultInputScopeId
+        try self.checkApprovalAllowed(params.action, inputScopeId: scope)
         return try await self.executionQueue.perform(
             params,
             lifecycleGeneration: lifecycleGeneration,
@@ -508,7 +508,7 @@ final class ComputerActionService {
                 guard let self else { throw CancellationError() }
                 try self.executionQueue.checkExecutionAllowed(lifecycleGeneration: lifecycleGeneration)
                 try checkScopeAllowed()
-                try ApprovalPromptState.shared.checkComputerAction(params.action)
+                try self.checkApprovalAllowed(params.action, inputScopeId: scope)
             }
             try checkExecutionAllowed()
             if params.deliveryMode == .background,
@@ -532,6 +532,16 @@ final class ComputerActionService {
                 params,
                 inputScopeId: scope,
                 checkExecutionAllowed: checkExecutionAllowed)
+        }
+    }
+
+    private func checkApprovalAllowed(_ action: OpenClawComputerAction, inputScopeId: UUID) throws {
+        do {
+            try ApprovalPromptState.shared.checkComputerAction(action)
+        } catch {
+            // Refusal must settle a split drag; failed releases stay with the queue's retry owner.
+            self.executionQueue.attemptInputRelease(inputScopeId: inputScopeId)
+            throw error
         }
     }
 

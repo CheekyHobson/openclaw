@@ -7,6 +7,34 @@ import WebKit
 @Suite(.serialized)
 @MainActor
 struct ExecApprovalPromptLayoutTests {
+    @Test(arguments: [false, true])
+    func `approval refusal settles only the requesting scope's held input`(sameScope: Bool) async throws {
+        let owner = UUID()
+        let approval = UUID()
+        var posted: [Bool] = []
+        let screen = ComputerScreenActionExecutor { down, _, _ in posted.append(down) }
+        let service = ComputerActionService(screen: screen)
+        try screen.pressLeftButton(at: .zero, flags: [.maskShift], inputScopeId: owner)
+        defer {
+            screen.releaseCurrentHeldButton()
+            ApprovalPromptState.shared.setPending(false, source: approval)
+        }
+        ApprovalPromptState.shared.setPending(true, source: approval)
+
+        do {
+            _ = try await service.perform(
+                OpenClawComputerActParams(action: .leftMouseUp),
+                lifecycleGeneration: 0,
+                inputScopeId: sameScope ? owner : UUID())
+            Issue.record("Expected approval refusal")
+        } catch let ComputerActionService.ComputerActionError.refused(message) {
+            #expect(message == "A human approval prompt is open on this Mac; wait for the user to answer it")
+        }
+
+        #expect(screen.isLeftButtonDownForTesting == !sameScope)
+        #expect(posted == (sameScope ? [true, false] : [true]))
+    }
+
     @Test func `dashboard confirmation sheets refuse computer input until answered`() async throws {
         _ = AppKitTestSupport.application
         let document = try ControlUIDocumentHost(
