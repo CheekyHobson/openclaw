@@ -1053,7 +1053,7 @@ export function createAuthProfileStoreRuntime(
       return createEmptyAuthProfileStore();
     }
     if (options?.profileId && isUserModelAuthProfileId(options.profileId)) {
-      const shared = loadAuthProfileStoreForRuntime(
+      const shared = runtimeReads.loadAuthProfileStoreForRuntime(
         agentDir,
         { ...options, profileId: undefined },
         env,
@@ -1107,20 +1107,17 @@ export function createAuthProfileStoreRuntime(
     );
   }
 
-  const {
-    loadAuthProfileStoreForRuntime,
-    loadAuthProfileStoreForRuntimeAsync,
-    withPreparedAuthProfileStoreReads,
-  } = createAuthProfileStoreRuntimeReader({
-    isEnvOnlyAuthProfileRuntime,
-    getScopedAuthProfileEnv,
-    resolveRuntimeAuthProfileAgentDir,
-    resolveRuntimeAuthProfileLoadOptions,
-    loadAuthProfileStoreForAgent,
-    loadRuntimeAuthProfileStore,
-    withPreparedExternalAuthProfiles,
-    captureScope,
-  });
+  const { withPreparedAuthProfileStoreReads, ...runtimeReads } =
+    createAuthProfileStoreRuntimeReader({
+      isEnvOnlyAuthProfileRuntime,
+      getScopedAuthProfileEnv,
+      resolveRuntimeAuthProfileAgentDir,
+      resolveRuntimeAuthProfileLoadOptions,
+      loadAuthProfileStoreForAgent,
+      loadRuntimeAuthProfileStore,
+      withPreparedExternalAuthProfiles,
+      captureScope,
+    });
 
   /** Prepare a recorded provider without putting persisted SQLite reads on the caller's thread. */
   async function prepareAuthProfileProvider(params: {
@@ -1349,14 +1346,14 @@ export function createAuthProfileStoreRuntime(
     };
     const read = (): AuthProfileStore => {
       const store = runInScope(() =>
-        loadAuthProfileStoreForRuntime(effectiveAgentDir, readOptions, env),
+        runtimeReads.loadAuthProfileStoreForRuntime(effectiveAgentDir, readOptions, env),
       );
       assertReadOwners();
       return store;
     };
     const readAsync = async (): Promise<AuthProfileStore> => {
       const store = await runInScope(() =>
-        loadAuthProfileStoreForRuntimeAsync(effectiveAgentDir, readOptions, env),
+        runtimeReads.loadAuthProfileStoreForRuntimeAsync(effectiveAgentDir, readOptions, env),
       );
       assertReadOwners();
       return store;
@@ -1435,7 +1432,7 @@ export function createAuthProfileStoreRuntime(
       replacement:
         "loadAuthProfileStoreForRuntimeAsync from openclaw/plugin-sdk/agent-runtime with readOnly: true and allowKeychainPrompt: false",
     });
-    return loadAuthProfileStoreForRuntime(agentDir, {
+    return runtimeReads.loadAuthProfileStoreForRuntime(agentDir, {
       ...options,
       readOnly: true,
       allowKeychainPrompt: false,
@@ -1447,7 +1444,7 @@ export function createAuthProfileStoreRuntime(
     agentDir?: string,
     options?: Parameters<typeof loadAuthProfileStoreForSecretsRuntime>[1],
   ): Promise<AuthProfileStore> {
-    return loadAuthProfileStoreForRuntimeAsync(agentDir, {
+    return runtimeReads.loadAuthProfileStoreForRuntimeAsync(agentDir, {
       ...options,
       readOnly: true,
       allowKeychainPrompt: false,
@@ -1766,12 +1763,11 @@ export function createAuthProfileStoreRuntime(
 
   return {
     prepareAuthProfileStoreForModelRuntime,
+    ...runtimeReads,
     createAuthProfileStoreReadScope,
     createAuthProfileStoreReadScopeAsync,
     updateAuthProfileStoreWithLock,
     loadAuthProfileStore,
-    loadAuthProfileStoreForRuntime,
-    loadAuthProfileStoreForRuntimeAsync,
     loadAuthProfileStoreForSecretsRuntime,
     loadAuthProfileStoreForSecretsRuntimeAsync,
     loadAuthProfileStoreWithoutExternalProfiles,
