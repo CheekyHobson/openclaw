@@ -203,6 +203,7 @@ export function createSessionRowProjectionFixture(params: {
       throw new Error("Indexed lookup requires a real session row projection");
     },
     onSelectionChange: revisions.onSelectionChange,
+    onActiveSessionChange: revisions.onActiveSessionChange,
     onFactsChange: revisions.onFactsChange,
     readPreparedRowContext: () => rowContext,
     readPreparedSpawnedBy(query) {
@@ -341,6 +342,9 @@ export function createSessionRowProjectionFixture(params: {
     },
     isCurrent: (row) => rows.get(id(row))?.generation === row.generation,
     selectEntries,
+    countActiveSessions() {
+      throw new Error("Active counts require a real session row projection");
+    },
     async projectRecentCandidates(profileIds) {
       const selection = createSessionRowSelection(
         cfg,
