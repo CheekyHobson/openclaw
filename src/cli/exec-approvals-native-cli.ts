@@ -8,7 +8,7 @@ import {
   loadSnapshotLocal,
   saveSnapshotLocal,
 } from "./exec-approvals-local.js";
-import { throwExpectedCliError } from "./failure-output.js";
+import { rethrowExpectedCliError, throwExpectedCliError } from "./failure-output.js";
 
 export function registerNativeExecApprovalsCli(approvals: Command): void {
   approvals
@@ -37,6 +37,7 @@ export function registerNativeExecApprovalsCli(approvals: Command): void {
         }
         defaultRuntime.writeJson(result, 0);
       } catch (error) {
+        rethrowExpectedCliError(error);
         throwExpectedCliError(formatCliError(error));
       }
     });
