@@ -64,8 +64,8 @@ export async function persistColdLoadWarmState(input: {
     }
     if (input.offRoster && sidebar.model.roster) {
       // Keep the cached sidebar shape, but force URL discovery to use the transcript snapshot.
-      const result = sidebar.model.roster.result;
-      result.sessions = result.sessions.filter((row) => row.key !== input.sessionKey);
+      const rosterResult = sidebar.model.roster.result;
+      rosterResult.sessions = rosterResult.sessions.filter((row) => row.key !== input.sessionKey);
     }
     return {
       storage: {
