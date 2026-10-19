@@ -4,10 +4,13 @@ import {
   setRuntimeConfigSnapshot,
 } from "../config/runtime-snapshot.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { createAdmittedRunOperatorAuthority } from "./admitted-run-context.js";
 import { createOpenClawCodingToolsInternal } from "./agent-tools.js";
+import type { AnyAgentTool } from "./agent-tools.types.js";
 import { resolveConversationCapabilityProfile } from "./conversation-capability-profile.js";
 import { resolveSandboxToolPolicyForAgent } from "./sandbox/tool-policy.js";
 import { createAgentToolsSandboxContext } from "./test-helpers/agent-tools-sandbox-context.js";
+import { withGatewayToolCallerIdentity } from "./tools/gateway-caller-context.js";
 
 const parentKey = "agent:main:dashboard:parent";
 const childKey = "agent:main:dashboard:child";
@@ -22,6 +25,54 @@ const plan = {
 
 describe("publication policy inherited by a managed child", () => {
   afterEach(() => clearRuntimeConfigSnapshot());
+
+  it("keeps inherited publication separate from the parent's permitted PR actions", async () => {
+    const config: OpenClawConfig = {
+      agents: { entries: { main: {} } },
+      tools: {
+        allow: ["github_publish"],
+        gatewayPolicy: {
+          allow: ["github_publish"],
+          actions: { github_publish: ["publish", "inspect"] },
+        },
+      },
+    };
+    const inheritedPublicationToolRef: { current?: AnyAgentTool } = {};
+    const tools = await withGatewayToolCallerIdentity(
+      {
+        agentId: "main",
+        sessionKey: parentKey,
+        operatorAuthority: createAdmittedRunOperatorAuthority({
+          profileId: "publication-policy-test",
+          scopes: ["operator.write"],
+          signal: new AbortController().signal,
+          assertCurrent: () => {},
+        }),
+      },
+      () =>
+        createOpenClawCodingToolsInternal({
+          config,
+          sessionKey: parentKey,
+          githubPublicationAvailable: false,
+          inheritedPublicationToolRef,
+          toolConstructionPlan: plan,
+          wrapBeforeToolCallHook: false,
+          conversationCapabilityProfile: resolveConversationCapabilityProfile({
+            config,
+            sessionKey: parentKey,
+            preparedSessionCapabilityStore: {},
+          }),
+        }),
+    );
+    const parentPublishers = tools.filter((tool) => tool.name === "github_publish");
+    expect(parentPublishers).toHaveLength(1);
+    expect(parentPublishers[0]?.parameters).toMatchObject({
+      properties: { action: { enum: ["inspect"] } },
+    });
+    expect(inheritedPublicationToolRef.current?.parameters).toMatchObject({
+      properties: { action: { enum: ["publish"] } },
+    });
+  });
 
   it.each([
     { name: "permitted publication", tools: { allow: allowed }, expected: true },

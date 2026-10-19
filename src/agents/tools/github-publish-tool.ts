@@ -14,6 +14,7 @@ import {
 } from "../../../packages/gateway-protocol/src/schema/session-github-publication.js";
 import { bindAgentToolAvailability } from "../agent-tool-availability.js";
 import type { SandboxContext } from "../sandbox/types.js";
+import { stringEnum } from "../schema/string-enum.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult } from "./common.js";
 import {
@@ -21,6 +22,10 @@ import {
   getGatewayToolCallerIdentity,
 } from "./gateway-caller-context.js";
 import { callInProcessGatewayTool, type InProcessGatewayCaller } from "./in-process-gateway.js";
+
+const publicationOperatorActions = GitHubPublicationActionSchema.properties.action.anyOf.map(
+  (action) => action.const,
+);
 
 function describeGitHubPublishTool(
   automationsAvailable: boolean,
@@ -62,21 +67,25 @@ export function createGitHubPublishTool(
                 }
               : {}),
             ...GitHubBaseRefreshSchema.properties,
-            action: actionsAvailable
-              ? Type.Optional(
-                  Type.Union([
-                    Type.Literal("publish"),
-                    Type.Literal("refresh_base"),
-                    ...GitHubPublicationActionSchema.properties.action.anyOf,
-                  ]),
-                )
-              : Type.Optional(Type.Literal("refresh_base")),
+            action: Type.Optional(
+              stringEnum([
+                "publish",
+                "refresh_base",
+                ...(actionsAvailable ? publicationOperatorActions : []),
+              ]),
+            ),
             title: Type.Optional(GitHubPublicationTitleSchema),
             body: Type.Optional(GitHubPublicationBodySchema),
           },
           { additionalProperties: false },
         )
-      : GitHubPublicationActionSchema,
+      : Type.Object(
+          {
+            ...GitHubPublicationActionSchema.properties,
+            action: stringEnum(publicationOperatorActions),
+          },
+          { additionalProperties: false },
+        ),
     execute: async (toolCallId, rawArgs) => {
       // SAFETY: the tool runtime validates rawArgs against the closed schema above.
       const input = rawArgs as Omit<SessionGitHubPublishParams, "idempotencyKey" | "sessionKey"> &
@@ -85,11 +94,12 @@ export function createGitHubPublishTool(
           conflictsResolved?: boolean;
           baseCommit?: string;
         };
+      const action = input.action ?? "publish";
       const caller = getGatewayToolCallerIdentity();
       if (!caller?.sessionKey) {
         throw new Error("GitHub publication requires the current Gateway session.");
       }
-      if (input.action === "refresh_base") {
+      if (action === "refresh_base") {
         if (
           !publicationAvailable ||
           input.publishingSessionKey ||
@@ -118,11 +128,11 @@ export function createGitHubPublishTool(
           ),
         );
       }
-      if (input.action && input.action !== "publish") {
+      if (action !== "publish") {
         return jsonResult(
           await callGateway<SessionGitHubActionResult>("sessions.github.action", {
             sessionKey: caller.sessionKey,
-            action: input.action,
+            action,
             ...(input.publishingSessionKey
               ? { publishingSessionKey: input.publishingSessionKey }
               : {}),

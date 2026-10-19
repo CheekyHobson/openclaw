@@ -12,7 +12,9 @@ import { resolveGatewayMessageChannel } from "../utils/message-channel.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
 import {
   bindAssembledAgentToolActionDescriptor,
+  bindChildOnlyPublicationTool,
   copyAgentToolMetadata,
+  isChildOnlyPublicationTool,
 } from "./agent-tool-metadata.js";
 import { createCodingToolsGatewayCaller } from "./agent-tools.caller.js";
 import { finalizeAgentTools } from "./agent-tools.finalize.js";
@@ -357,11 +359,11 @@ function* assembleOpenClawCodingTools(
     capabilityProfile.policy.inheritancePolicies.some(hasRestrictiveAllowPolicy);
   // A new managed child has its own publication workspace. Run the real tool
   // through all parent policies before capturing it, without exposing it here.
-  const unavailablePublicationTool =
+  const inheritedPublicationCandidate =
     (shouldInheritEffectiveToolAllowlist || options?.inheritedPublicationToolRef) &&
     includeOpenClawTools &&
     options?.githubPublicationAvailable === false
-      ? createGitHubPublishTool()
+      ? bindChildOnlyPublicationTool(createGitHubPublishTool())
       : undefined;
   const cronCreatorToolAllowlist = options?.cronCreatorToolAllowlistRef ?? [];
   const gatewayCaller = resolveScheduledToolCallerContext({
@@ -515,8 +517,8 @@ function* assembleOpenClawCodingTools(
   const tools = preparedTools
     ? [...new Map([...assembledTools, ...preparedTools].map((tool) => [tool.name, tool])).values()]
     : assembledTools;
-  if (unavailablePublicationTool) {
-    tools.push(unavailablePublicationTool);
+  if (inheritedPublicationCandidate) {
+    tools.push(inheritedPublicationCandidate);
   }
   const swarmStructuredOutputTool =
     options?.swarmCollector && options.swarmOutputSchema
@@ -577,11 +579,9 @@ function* assembleOpenClawCodingTools(
     },
   );
   const inheritableTools = applyGatewayToolPolicy(grantedTools, options?.config);
-  const authorizedTools = inheritableTools.filter((tool) => tool !== unavailablePublicationTool);
+  const authorizedTools = inheritableTools.filter((tool) => !isChildOnlyPublicationTool(tool));
   if (options?.inheritedPublicationToolRef) {
-    options.inheritedPublicationToolRef.current = inheritableTools.find(
-      (tool) => tool === unavailablePublicationTool,
-    );
+    options.inheritedPublicationToolRef.current = inheritableTools.find(isChildOnlyPublicationTool);
   }
   assertMemoryFlushPersistenceToolAvailable(authorizedTools, options?.memoryFlushTools);
   authorizedTools.forEach(bindAssembledAgentToolActionDescriptor);

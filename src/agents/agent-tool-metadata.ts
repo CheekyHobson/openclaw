@@ -33,6 +33,7 @@ type ToolActionState = Readonly<{
   descriptor?: AgentToolActionDescriptor;
   executionLocation?: AgentToolExecutionLocation;
   gatewayPolicyControl?: true;
+  childOnlyPublication?: true;
 }>;
 
 // Rebuilt tools retain prepared classification without adding weak-table edges.
@@ -65,6 +66,16 @@ export function bindGatewayToolPolicyControl<T extends AnyAgentTool>(tool: T): T
 
 export function isGatewayToolPolicyControl(tool: object): boolean {
   return ToolActionMetadata.get(tool)?.gatewayPolicyControl === true;
+}
+
+/** Carry a child-only capability through tool projections without exposing it to the parent. */
+export function bindChildOnlyPublicationTool<T extends AnyAgentTool>(tool: T): T {
+  ToolActionMetadata.set(tool, { childOnlyPublication: true });
+  return tool;
+}
+
+export function isChildOnlyPublicationTool(tool: object): boolean {
+  return ToolActionMetadata.get(tool)?.childOnlyPublication === true;
 }
 
 const memoryAction: AgentToolActionDescriptor = Object.freeze({

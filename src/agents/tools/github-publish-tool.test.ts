@@ -1,7 +1,9 @@
 import { expectDefined } from "@openclaw/normalization-core/expect";
+import { Value } from "typebox/value";
 import { describe, expect, it, vi } from "vitest";
 import { runWithAgentToolExecutionContext } from "../../../packages/agent-core/src/tool-execution-context.js";
 import { finalizeAgentToolAvailability } from "../agent-tool-availability.js";
+import { applyGatewayToolPolicy } from "../gateway-tool-policy.js";
 import { makeAssistantMessageFixture } from "../test-helpers/assistant-message-fixtures.js";
 import { createCronToolSchema } from "./cron-tool-schema.js";
 import { withGatewayToolCallerIdentity } from "./gateway-caller-context.js";
@@ -9,6 +11,20 @@ import { createGitHubPublishTool } from "./github-publish-tool.js";
 import type { InProcessGatewayCaller } from "./in-process-gateway.js";
 
 describe("github_publish tool", () => {
+  it("applies deployment action limits when publication and operator actions are available", () => {
+    const [tool] = applyGatewayToolPolicy([createGitHubPublishTool({ actionsAvailable: true })], {
+      tools: {
+        gatewayPolicy: {
+          allow: ["github_publish"],
+          actions: { github_publish: ["publish", "inspect"] },
+        },
+      },
+    });
+    expect(tool?.parameters).toMatchObject({
+      properties: { action: { enum: ["publish", "inspect"] } },
+    });
+  });
+
   it.each(["available", "absent", "self-scoped", "denied"] as const)(
     "offers a scheduled continuation only with %s automation creation",
     (availability) => {
@@ -111,10 +127,12 @@ describe("github_publish tool", () => {
     }));
     const callGateway = callGatewayMock as InProcessGatewayCaller;
     const tool = createGitHubPublishTool({ callGateway });
+    const args = { action: "publish", title: "Publish the fix" };
+    expect(Value.Check(tool.parameters, args)).toBe(true);
 
     await withGatewayToolCallerIdentity(
       { agentId: "main", sessionKey: "agent:main:host-owned" },
-      async () => await tool.execute("tool-call-1", { title: "Publish the fix" }),
+      async () => await tool.execute("tool-call-1", args),
     );
 
     expect(callGatewayMock).toHaveBeenCalledWith("sessions.github.publish", {
