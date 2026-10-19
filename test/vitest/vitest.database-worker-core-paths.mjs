@@ -12,6 +12,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/gateway/local-request-context.session-archive.test.ts",
   "src/gateway/local-request-context.session-rename.test.ts",
   "src/plugin-sdk/provider-catalog-runtime.test.ts",
+  "src/plugin-sdk/session-store-runtime.workboard-dispatch.test.ts",
   "src/plugin-sdk/memory-core-bundled-runtime.recall.test.ts",
   "test/talk-browser-defaults.test.ts",
   "src/acp/event-ledger.prepared.test.ts",

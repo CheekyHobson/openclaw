@@ -18,6 +18,7 @@ import {
 import { resolveSessionWorkStartBlock } from "../config/sessions/session-work-start.js";
 import type { InternalSessionEntry, SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { resolvePluginSessionOwnershipError } from "../gateway/session-plugin-ownership.js";
 import { resolveSessionStoreIdentity } from "../gateway/session-store-key.js";
 import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
@@ -72,6 +73,15 @@ export async function replaceArchivedSubagentSession(params: {
               authority();
               if (currentEntry?.archivedAt === undefined) {
                 return undefined;
+              }
+              const ownershipError = resolvePluginSessionOwnershipError({
+                action: "reset",
+                entry: currentEntry,
+                key: sessionKey,
+                pluginOwnerId: scope?.pluginId,
+              });
+              if (ownershipError) {
+                throw new Error(ownershipError.message);
               }
               const block = resolveSessionWorkStartBlock(sessionKey, currentEntry);
               if (block?.reason !== "archived" || currentEntry.modelSelectionLocked) {

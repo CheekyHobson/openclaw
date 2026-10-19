@@ -15,9 +15,14 @@ import {
   resolveStorePath,
 } from "./session-store-runtime.js";
 
-it.each([false, true])(
-  "preserves plugin replacement authority with roles (scoped: %s)",
-  async (scoped) => {
+it.each([
+  { label: "system owner", scoped: false, pluginOwnerId: "workboard" },
+  { label: "limited operator", scoped: true, pluginOwnerId: "workboard" },
+  { label: "foreign plugin", scoped: false, pluginOwnerId: "another-plugin" },
+  { label: "unowned session", scoped: false, pluginOwnerId: undefined },
+])(
+  "preserves plugin replacement authority with roles ($label)",
+  async ({ scoped, pluginOwnerId }) => {
     await withOpenClawTestState({ label: "archived-worker-roles" }, async () => {
       const config: OpenClawConfig = {
         agents: { entries: { main: {} } },
@@ -36,7 +41,12 @@ it.each([false, true])(
         sessionKey: "agent:main:subagent:automation-worker",
         storePath: resolveStorePath(undefined, { agentId: "main" }),
       };
-      const entry = { sessionId: "archived-worker", updatedAt: Date.now(), archivedAt: 1 };
+      const entry = {
+        sessionId: "archived-worker",
+        updatedAt: Date.now(),
+        archivedAt: 1,
+        pluginOwnerId,
+      };
       await replaceSessionEntry(scope, entry);
       const operation = withPluginRuntimeGatewayRequestScope(
         {
@@ -55,8 +65,8 @@ it.each([false, true])(
         () =>
           replaceArchivedSubagentSession({ sessionKey: scope.sessionKey, getConfig: () => config }),
       );
-      if (scoped) {
-        await expect(operation).rejects.toThrow(/role|scope|allowed|access/i);
+      if (scoped || pluginOwnerId !== "workboard") {
+        await expect(operation).rejects.toThrow(/role|scope|allowed|access|did not create/i);
         await expect(getSessionEntryAsync(scope)).resolves.toMatchObject(entry);
       } else {
         await expect(operation).resolves.toBe(true);
