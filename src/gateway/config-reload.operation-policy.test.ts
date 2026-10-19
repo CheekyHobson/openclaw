@@ -27,6 +27,8 @@ describe("Gateway operation policy reload", () => {
     "gateway.terminal.enabled",
     "gateway.http.endpoints.chatCompletions.enabled",
     "gateway.tools.allow",
+    "tools.allow",
+    "tools.deny",
     "gateway.cliAgents.enabled",
     "gateway.uploads.enabled",
     "gateway.controlUi.enabled",
@@ -84,6 +86,58 @@ describe("Gateway operation policy reload", () => {
       restartChannelAccounts: new Map(),
     });
     expect(resolveConfigReloadMetadata(path).kind).toBe("hot");
+  });
+
+  it.each([
+    {
+      name: "adding policy",
+      previous: { tools: {} },
+      next: { tools: { gatewayPolicy: { allow: ["read"] } } },
+      path: "tools.gatewayPolicy",
+    },
+    {
+      name: "changing policy",
+      previous: { tools: { gatewayPolicy: { allow: ["read"] } } },
+      next: { tools: { gatewayPolicy: { allow: [] } } },
+      path: "tools.gatewayPolicy.allow",
+    },
+    {
+      name: "removing policy",
+      previous: { tools: { gatewayPolicy: { allow: ["read"] } } },
+      next: { tools: {} },
+      path: "tools.gatewayPolicy",
+    },
+    {
+      name: "adding tools with policy",
+      previous: {},
+      next: { tools: { gatewayPolicy: { allow: ["read"] } } },
+      path: "tools.gatewayPolicy",
+    },
+    {
+      name: "removing tools with policy",
+      previous: { tools: { gatewayPolicy: { allow: ["read"] } } },
+      next: {},
+      path: "tools.gatewayPolicy",
+    },
+  ] satisfies {
+    name: string;
+    previous: OpenClawConfig;
+    next: OpenClawConfig;
+    path: string;
+  }[])("requires a Gateway restart when $name", ({ previous, next, path }) => {
+    const changedPaths = diffGatewayReloadPaths(
+      previous,
+      next,
+      listConfigReloadRefinementPrefixes(),
+    );
+    const plan = buildGatewayReloadPlan(changedPaths);
+
+    expect(plan).toMatchObject({
+      restartGateway: true,
+      restartReasons: [path],
+      hotReasons: [],
+    });
+    expect(resolveConfigReloadMetadata(path).kind).toBe("restart");
   });
 
   it.each(["cloudWorkers.profiles", "cloudWorkers.profiles.build.settings.machineType"])(

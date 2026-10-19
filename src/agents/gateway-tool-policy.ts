@@ -109,19 +109,13 @@ function assertCall(
   }
 }
 
-/** The current Gateway ceiling narrows captured policy without replacing scoped run config. */
+/** Capture the deployment policy when constructing the tool executor. */
 export function createGatewayToolPolicyAssertion(
   tool: GatewayToolPolicyTarget,
-  config?: OpenClawConfig,
+  config: OpenClawConfig | undefined = getRuntimeConfigSnapshot() ?? undefined,
 ) {
-  const initial = config?.tools?.gatewayPolicy;
-  return (args: unknown): void => {
-    assertCall(initial, tool, args);
-    const current = getRuntimeConfigSnapshot()?.tools?.gatewayPolicy;
-    if (current !== initial) {
-      assertCall(current, tool, args);
-    }
-  };
+  const policy = config?.tools?.gatewayPolicy;
+  return (args: unknown): void => assertCall(policy, tool, args);
 }
 
 function applyPolicy<T extends GatewayToolPolicyTarget>(
@@ -160,13 +154,10 @@ function applyPolicy<T extends GatewayToolPolicyTarget>(
   });
 }
 
-/** Apply after ordinary grants; neither captured nor current Gateway policy can widen the other. */
+/** Apply the deployment policy after ordinary tool and plugin grants. */
 export function applyGatewayToolPolicy<T extends GatewayToolPolicyTarget>(
   tools: T[],
-  config?: OpenClawConfig,
+  config: OpenClawConfig | undefined = getRuntimeConfigSnapshot() ?? undefined,
 ): T[] {
-  const initial = config?.tools?.gatewayPolicy;
-  const current = getRuntimeConfigSnapshot()?.tools?.gatewayPolicy;
-  const projected = applyPolicy(tools, initial);
-  return current === initial ? projected : applyPolicy(projected, current);
+  return applyPolicy(tools, config?.tools?.gatewayPolicy);
 }

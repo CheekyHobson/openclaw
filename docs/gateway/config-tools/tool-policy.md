@@ -230,7 +230,9 @@ This example permits only those underlying tools, subject to the other tool poli
 
 Every selected tool with an `action` field also needs an explicit `actions` entry. Its published schema contains only those actions, and execution requires an explicit permitted action. An empty action list withholds the tool. Action filtering supports a top-level string action field; unsupported action schemas fail clearly during assembly.
 
-Tool Search and Code Mode remain available as dispatchers over the permitted catalog. They do not grant access to omitted tools. The execution check runs after hooks and approval preparation, so a hook cannot rewrite an allowed request into a prohibited action. Retained Gateway executors and catalogs observe a tightened active runtime policy. Operations already executing must finish or be drained before a deployment owner declares a stricter policy fully active.
+Tool Search and Code Mode remain available as dispatchers over the permitted catalog. They do not grant access to omitted tools. The execution check runs after hooks and approval preparation, so a hook cannot rewrite an allowed request into a prohibited action. Tool assembly captures the deployment policy; retained executors and catalogs keep that policy.
+
+Adding, changing or removing `tools.gatewayPolicy` requires a Gateway restart. Deployment owners such as OCE supply the policy when deploying the Gateway and activate changes through restart or replacement after affected old work ends. Newly assembled tools then use the new deployment policy. Ordinary tool-policy settings keep their existing reload behavior.
 
 This policy limits model-directed tools. Direct human Gateway administration keeps its existing authorization. It does not configure native Codex tools, restrict arbitrary Harness-local programs, or replace the separate controls required for scheduled command jobs and automation administration.
 

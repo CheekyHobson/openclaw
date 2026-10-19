@@ -2,7 +2,6 @@ import { getPublishedRuntimeToolInputSchema } from "@openclaw/ai/internal/tool-s
 import { stableStringify } from "@openclaw/normalization-core";
 import { sha256StableValue } from "@openclaw/normalization-core/node-crypto";
 import { getRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { generateSecureHex } from "../infra/secure-random.js";
 import { getPluginToolMeta, type PluginToolMcpMeta } from "../plugins/tool-metadata.js";
 import { finalizeAgentToolAvailability } from "./agent-tool-availability.js";
@@ -12,7 +11,10 @@ import {
   rewrapToolWithBeforeToolCallHook,
   wrapToolWithBeforeToolCallHook,
 } from "./agent-tools.before-tool-call.js";
-import { getBeforeToolCallDiagnosticOptions } from "./before-tool-call-metadata.js";
+import {
+  getBeforeToolCallDiagnosticOptions,
+  getBeforeToolCallHookContext,
+} from "./before-tool-call-metadata.js";
 import { disposeCodeModeResults } from "./code-mode-results.js";
 import { isCoreCodingSurfaceToolName } from "./core-tool-factory-descriptors.js";
 import { applyGatewayToolPolicy } from "./gateway-tool-policy.js";
@@ -39,8 +41,6 @@ const catalogMetadata = new WeakMap<
   {
     fingerprint: string;
     toolExecutionAllow?: readonly string[];
-    config?: OpenClawConfig;
-    gatewayPolicy?: NonNullable<OpenClawConfig["tools"]>["gatewayPolicy"] | null;
   }
 >();
 const untrustedSchemaIdentities = new WeakMap<object, number>();
@@ -210,17 +210,26 @@ export function registerHeadlessToolSearchCatalog(params: {
   tools: readonly AnyAgentTool[];
   hookContext?: HookContext;
 }): void {
-  const { catalogRef, tools, hookContext } = params;
-  const entries = applyGatewayToolPolicy([...tools], hookContext?.config)
+  const { catalogRef, tools } = params;
+  const config = params.hookContext?.config ?? getRuntimeConfigSnapshot() ?? undefined;
+  const hookContext = params.hookContext
+    ? { ...params.hookContext, config }
+    : config?.tools?.gatewayPolicy
+      ? { config }
+      : undefined;
+  const entries = applyGatewayToolPolicy([...tools], config)
     .filter(shouldCatalogTool)
     .map((tool) => {
       const scopedTool =
         hookContext && isToolWrappedWithBeforeToolCallHook(tool)
-          ? rewrapToolWithBeforeToolCallHook(tool, hookContext)
+          ? rewrapToolWithBeforeToolCallHook(tool, {
+              ...getBeforeToolCallHookContext(tool),
+              ...hookContext,
+            })
           : tool;
       return toCatalogEntry(scopedTool, undefined, hookContext);
     });
-  registerToolSearchCatalog({ catalogRef, entries, config: hookContext?.config });
+  registerToolSearchCatalog({ catalogRef, entries });
 }
 
 export function collectUniqueCatalogToolNames(tools: readonly AnyAgentTool[]): Set<string> {
@@ -264,7 +273,6 @@ function finalizeCatalogAvailability(
 }
 
 function registerToolSearchCatalog(params: {
-  config?: OpenClawConfig;
   catalogRef: ToolSearchCatalogRef;
   entries: ToolSearchCatalogEntry[];
   mode?: "append" | "reuse";
@@ -293,10 +301,6 @@ function registerToolSearchCatalog(params: {
       : undefined;
   if (existing && reboundEntries) {
     existing.entries = reboundEntries;
-    if (metadata && params.config) {
-      metadata.config = params.config;
-      metadata.gatewayPolicy = undefined;
-    }
     return true;
   }
   const next = {
@@ -313,7 +317,6 @@ function registerToolSearchCatalog(params: {
   catalogMetadata.set(next, {
     fingerprint,
     toolExecutionAllow,
-    config: params.config ?? metadata?.config,
   });
   params.catalogRef.current = next;
   if (!prior) {
@@ -375,7 +378,6 @@ export function restrictToolSearchCatalog(params: {
   catalogMetadata.set(current, {
     ...metadata,
     fingerprint: catalogEntriesFingerprint(current.entries),
-    gatewayPolicy: undefined,
   });
   return entries.length;
 }
@@ -384,18 +386,6 @@ export function resolveCatalog(ctx: ToolSearchToolContext): ToolSearchCatalogSes
   const catalog = ctx.catalogRef?.current;
   if (!catalog) {
     throw new ToolInputError("Tool Search catalog is unavailable for this run.");
-  }
-  const metadata = catalogMetadata.get(catalog);
-  const policy = getRuntimeConfigSnapshot()?.tools?.gatewayPolicy ?? null;
-  if (metadata && policy !== metadata.gatewayPolicy) {
-    catalog.entries = catalog.entries.flatMap((entry) => {
-      if (entry.source === "client") {
-        return [entry];
-      }
-      const [tool] = applyGatewayToolPolicy([entry.tool], metadata.config);
-      return tool ? [{ ...entry, tool, parameters: tool.parameters }] : [];
-    });
-    metadata.gatewayPolicy = policy;
   }
   return catalog;
 }
@@ -472,16 +462,25 @@ export function createToolSearchCatalogRef(): ToolSearchCatalogRef {
 export function applyToolCatalogCompaction(
   params: ToolSearchCatalogCompactionParams,
 ): ToolSearchCatalogApplyResult {
-  const config = params.toolHookContext?.config ?? params.config;
-  const hasGatewayPolicy = Boolean(
-    config?.tools?.gatewayPolicy ?? getRuntimeConfigSnapshot()?.tools?.gatewayPolicy,
-  );
-  const toolHookContext = params.toolHookContext ?? (hasGatewayPolicy ? { config } : undefined);
-  const tools = applyGatewayToolPolicy(params.tools, config).map((tool) =>
-    hasGatewayPolicy && toolHookContext && !isToolWrappedWithBeforeToolCallHook(tool)
-      ? wrapToolWithBeforeToolCallHook(tool, toolHookContext)
-      : tool,
-  );
+  const config =
+    params.toolHookContext?.config ?? params.config ?? getRuntimeConfigSnapshot() ?? undefined;
+  const hasGatewayPolicy = Boolean(config?.tools?.gatewayPolicy);
+  const toolHookContext = params.toolHookContext
+    ? { ...params.toolHookContext, config }
+    : hasGatewayPolicy
+      ? { config }
+      : undefined;
+  const tools = applyGatewayToolPolicy(params.tools, config).map((tool) => {
+    if (!hasGatewayPolicy || !toolHookContext) {
+      return tool;
+    }
+    return isToolWrappedWithBeforeToolCallHook(tool)
+      ? rewrapToolWithBeforeToolCallHook(tool, {
+          ...getBeforeToolCallHookContext(tool),
+          ...toolHookContext,
+        })
+      : wrapToolWithBeforeToolCallHook(tool, toolHookContext);
+  });
   const hasControlTool = params.enabled && tools.some((tool) => params.isVisibleControlTool(tool));
   const catalogRef = params.catalogRef;
   if (!hasControlTool || !catalogRef) {
@@ -523,7 +522,6 @@ export function applyToolCatalogCompaction(
     catalogRef,
     entries: catalog,
     mode: "reuse",
-    config,
     toolExecutionAllow: params.toolExecutionAllow,
   });
   catalogRef.directOnlyToolNames = new Set(

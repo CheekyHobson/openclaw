@@ -55,6 +55,10 @@ export function finalizeAgentTools(options: FinalizeAgentToolsOptions): AnyAgent
     emitDiagnostics: options.emitBeforeToolCallDiagnostics,
     ...(options.approvalMode ? { approvalMode: options.approvalMode } : {}),
   };
+  const hookContext = {
+    ...options.hookContext,
+    config: options.hookContext.config ?? options.config,
+  };
   const withHooks =
     options.wrapBeforeToolCallHook === false
       ? normalized
@@ -63,8 +67,8 @@ export function finalizeAgentTools(options: FinalizeAgentToolsOptions): AnyAgent
           !options.wrapBeforeToolCallHook(tool)
             ? tool
             : isToolWrappedWithBeforeToolCallHook(tool)
-              ? rewrapToolWithBeforeToolCallHook(tool, options.hookContext, hookOptions)
-              : wrapToolWithBeforeToolCallHook(tool, options.hookContext, hookOptions),
+              ? rewrapToolWithBeforeToolCallHook(tool, hookContext, hookOptions)
+              : wrapToolWithBeforeToolCallHook(tool, hookContext, hookOptions),
         );
   options.recordToolPrepStage?.("tool-hooks");
   const abortSignal = options.abortSignal;
