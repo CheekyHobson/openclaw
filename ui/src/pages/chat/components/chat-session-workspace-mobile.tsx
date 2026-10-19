@@ -11,7 +11,7 @@ import { liveValue } from "../../../lib/reactive/live-value.ts";
 import type {
   SessionWorkspaceFilter,
   SessionWorkspaceProps,
-} from "./chat-session-workspace-types.ts";
+} from "./chat-sidebar-content-types.ts";
 import "./chat-session-workspace-mobile.css";
 
 type SessionFile = SessionWorkspaceListResult["files"][number];
