@@ -268,12 +268,14 @@ export function createModelProviders(
         modelCatalog.peekModelCatalog(data.client, catalogScope) !== undefined;
       if (
         readAccess &&
-        catalogCurrent &&
         (data.agentId ?? "") === state.selectedAgentId &&
         data.selectionIntentRevision === context.settingsAgentSelection.intentRevision &&
         gateway.isRouteDataCurrent(data)
       ) {
         supplemental.adoptCoreData(data.client, data.data);
+        if (!catalogCurrent) {
+          retryCatalog();
+        }
       } else {
         setState("data", null);
         dataClient = null;
@@ -687,8 +689,7 @@ export function createModelProviders(
       onRemoveKey: (provider, configKey) => void mutateApiKey(provider, configKey, null),
       onProbe: (cardId, providers) => void profileActions.probe(cardId, providers),
       onRequestLogout: (pending) => void profileActions.requestLogout(pending),
-      onProfileOrderChange: (cardId, provider, profileIds) =>
-        profileActions.setOrder(cardId, provider, profileIds),
+      onProfileOrderChange: profileActions.setOrder,
       onAddProviderToggle: () => {
         setAddProviderOpen((open) => !open);
         setState("addProviderKey", "");

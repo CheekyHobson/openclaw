@@ -36,13 +36,22 @@ it("catches a catalog publication between route preload and page mount", async (
     payload: { agentId: "main", modelCatalogChanged: true, authChanged: false },
   });
   releaseAuth();
+  const data = await preload;
+  const releaseRefreshAuth = deferNextAuthStatus();
   const page = createPage(context);
-  publishRouteData(page, await preload);
-  mountPage(page);
-  await waitForSolid(() =>
-    expect(
-      page.querySelector('[data-provider-id="openai"] .model-providers__head .settings-status')
-        ?.textContent,
-    ).toBe("Ready"),
-  );
+  publishRouteData(page, data);
+  try {
+    mountPage(page);
+    await waitForSolid(() => {
+      const provider = page.querySelector('[data-provider-id="openai"]');
+      expect(provider?.querySelector('[data-profile-id="openai:one"]')?.textContent).toContain(
+        "Signed in",
+      );
+      expect(provider?.querySelector(".model-providers__head .settings-status")?.textContent).toBe(
+        "Ready",
+      );
+    });
+  } finally {
+    releaseRefreshAuth();
+  }
 });
