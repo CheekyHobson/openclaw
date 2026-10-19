@@ -26,6 +26,7 @@ import type { BrowserOpenResult } from "./client.types.js";
 import type { ResolvedBrowserProfile } from "./config.js";
 import { resolveBrowserEngine } from "./engines/registry.js";
 import {
+  assertBrowserControlUiTabAllowed,
   assertBrowserNavigationAllowed,
   assertBrowserNavigationResultAllowed,
   InvalidBrowserNavigationUrlError,
@@ -298,7 +299,9 @@ export function createProfileTabOps({ profile, state, runtime }: TabOpsDeps): Pr
     keepTargetId: string,
     options?: BrowserOperationOptions,
   ): Promise<void> => {
-    if (!capabilities.supportsManagedTabLimit || state().resolved.attachOnly || !runtime.running) {
+    const running = runtime.running;
+    const ownerProfile = runtime.profile;
+    if (!capabilities.supportsManagedTabLimit || state().resolved.attachOnly || !running) {
       return;
     }
 
@@ -315,27 +318,46 @@ export function createProfileTabOps({ profile, state, runtime }: TabOpsDeps): Pr
         tab.targetId !== keepTargetId &&
         !findRetainedBrowserDashboardTab(tab.targetId, profile.name, retained),
     );
-    const excessCount = pageTabs.length - MANAGED_BROWSER_PAGE_TAB_LIMIT;
+    let remaining = pageTabs.length - MANAGED_BROWSER_PAGE_TAB_LIMIT;
     const lastUsedByTarget = await readProfileTabLastUsedAt(profile.name);
     const evictionOrder = orderManagedTabEvictionCandidates(candidates, lastUsedByTarget);
-    for (const tab of evictionOrder.slice(0, excessCount)) {
+    for (const tab of evictionOrder) {
+      if (remaining === 0) {
+        break;
+      }
       options?.signal?.throwIfAborted();
-      await dispatchBrowserTabClose(
+      const closed = await dispatchBrowserTabClose(
         tab.targetId,
         profile.name,
-        () => {
+        async () => {
           options?.signal?.throwIfAborted();
-          return fetchOk(
+          await fetchOk(
             appendCdpPath(cdpHttpBase, `/json/close/${tab.targetId}`),
             undefined,
             undefined,
             getCdpControlPolicy(),
           );
+          return true;
         },
-        { skipRetained: true },
-      ).catch(() => {
-        // best-effort cleanup only
-      });
+        {
+          skipRetained: true,
+          assertCurrent: async () => {
+            const current = resolveBrowserTabOrThrow(tab.targetId, await listTabs(options), true);
+            await assertBrowserControlUiTabAllowed(current.url, options);
+            options?.signal?.throwIfAborted();
+            if (
+              state().resolved.attachOnly ||
+              runtime.running !== running ||
+              runtime.profile !== ownerProfile
+            ) {
+              throw new Error("Managed browser changed before tab cleanup");
+            }
+          },
+        },
+      ).catch(() => false); // Best-effort cleanup skips protected or unavailable candidates.
+      if (closed) {
+        remaining -= 1;
+      }
     }
   };
 

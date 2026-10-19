@@ -10,6 +10,7 @@ import { resolveManagedBrowserHeadlessMode } from "../config.js";
 import { buildBrowserDoctorReport } from "../doctor.js";
 import { listBrowserEngines, resolveBrowserEngine } from "../engines/registry.js";
 import { BrowserError } from "../errors.js";
+import { assertBrowserControlUiTabAllowed } from "../navigation-guard.js";
 import { getBrowserProfileCapabilities } from "../profile-capabilities.js";
 import { createBrowserProfilesService } from "../profiles-service.js";
 import type { BrowserRouteContext, ProfileContext } from "../server-context.js";
@@ -382,8 +383,21 @@ export function registerBrowserBasicRoutes(app: BrowserRouteRegistrar, ctx: Brow
     res.json({ ok: true, profile: profileCtx.profile.name });
   });
 
-  registerBasicProfilePost(app, ctx, "/stop", async ({ res, profileCtx }) => {
-    const result = await profileCtx.stopRunningBrowser();
+  registerBasicProfilePost(app, ctx, "/stop", async ({ req, res, profileCtx }) => {
+    if (
+      getBrowserProfileCapabilities(profileCtx.profile).mode === "local-managed" &&
+      (ctx.state().profiles.get(profileCtx.profile.name)?.running ||
+        (await profileCtx.isHttpReachable(STATUS_CDP_HTTP_TIMEOUT_MS, req.signal)))
+    ) {
+      for (const tab of await profileCtx.listTabs({ signal: req.signal })) {
+        await assertBrowserControlUiTabAllowed(tab.url, { signal: req.signal });
+      }
+    }
+    const result = await withBasicRequestAdmission(
+      req,
+      () => profileCtx.stopRunningBrowser(),
+      profileCtx.profile,
+    );
     res.json({
       ok: true,
       stopped: result.stopped,

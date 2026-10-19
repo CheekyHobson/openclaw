@@ -110,10 +110,14 @@ function setup(
   return { state, openclaw, runtime: state.profiles.get("openclaw")!, fetchMock };
 }
 
-function setupManagedTabEviction(closed: string[], cleanup: { resolve: () => void }) {
+function setupManagedTabEviction(
+  closed: string[],
+  cleanup: { resolve: () => void },
+  tabs = () => makeManagedTabsWithNew({ newFirst: true }),
+) {
   return setup(async (url) => {
     if (url.includes("/json/list")) {
-      return Response.json(makeManagedTabsWithNew({ newFirst: true }));
+      return Response.json(tabs());
     }
     if (url.includes("/json/version")) {
       return Response.json({
@@ -380,6 +384,34 @@ describe("browser tab selection and ownership", () => {
     // recorded activity, so it is evicted even though OLD8 sits last in the
     // CDP listing. Losing the activity read would close OLD8 instead.
     expect(closed).toEqual(["http://127.0.0.1:18800/json/close/OLD2"]);
+  });
+
+  it("skips an eviction candidate that becomes a Control UI tab during ownership preparation", async () => {
+    setRuntimeConfigSnapshot({ gateway: { publicOrigin: "https://control.example" } });
+    let showApproval = false;
+    vi.spyOn(sessionTabStore, "readBrowserDashboardTabs").mockImplementation(async () => {
+      showApproval = true;
+      return [];
+    });
+    mockCreatedTarget("NEW", "http://127.0.0.1:3009");
+    const closed: string[] = [];
+    const cleanup = Promise.withResolvers<void>();
+    const { openclaw, runtime } = setupManagedTabEviction(closed, cleanup, () => {
+      const tabs = makeManagedTabsWithNew({ newFirst: true });
+      for (const tab of tabs) {
+        if (tab.id === "OLD8" && showApproval) {
+          tab.url = "https://control.example/approvals";
+        }
+      }
+      return tabs;
+    });
+    runtime.running = mockLaunchedChrome(vi.fn(), 1234);
+
+    await openclaw.openTab("http://127.0.0.1:3009");
+    await cleanup.promise;
+
+    expect(closed).toEqual(["http://127.0.0.1:18800/json/close/OLD7"]);
+    expect(runtime.lastTargetId).toBe("NEW");
   });
 
   it("evicts untracked managed tabs ahead of recently tracked ones", async () => {
