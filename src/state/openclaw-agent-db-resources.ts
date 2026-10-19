@@ -5,6 +5,7 @@ import {
   matchesAgentDatabaseReadCandidatePath,
   registerAgentDatabaseReaderCloser,
 } from "../infra/agent-database-readers.js";
+import { throwSettledAggregate } from "../infra/error-graph-internal.js";
 import { isPathInside } from "../infra/path-guards.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { reserveAgentCreationClaimAdmission } from "./agent-creation-claim.js";
@@ -76,10 +77,7 @@ registerAgentDatabaseReaderCloser(async (candidates, retainedPaths) => {
       )
       .map((resource) => closeAgentDatabaseResource(resource)),
   );
-  const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
-  if (errors.length > 0) {
-    throw new AggregateError(errors, "Agent database resource cleanup failed");
-  }
+  throwSettledAggregate(results, "Agent database resource cleanup failed");
 });
 
 export function matchesAgentDatabaseClose(
@@ -277,21 +275,11 @@ export async function drainAgentDatabaseResources<T>(
         .filter((resource) => !resource.retireAfterResources)
         .map((resource) => closeAgentDatabaseResource(resource)),
     );
-    const errors = results.flatMap((result) =>
-      result.status === "rejected" ? [result.reason] : [],
-    );
-    if (errors.length > 0) {
-      throw new AggregateError(errors, "Agent database resource drainage failed");
-    }
+    throwSettledAggregate(results, "Agent database resource drainage failed");
     const nativeResults = await Promise.allSettled(
       nativeOwners.map((resource) => closeAgentDatabaseResource(resource)),
     );
-    const nativeErrors = nativeResults.flatMap((result) =>
-      result.status === "rejected" ? [result.reason] : [],
-    );
-    if (nativeErrors.length > 0) {
-      throw new AggregateError(nativeErrors, "Agent database native retirement failed");
-    }
+    throwSettledAggregate(nativeResults, "Agent database native retirement failed");
     return closeNative();
   });
 }
