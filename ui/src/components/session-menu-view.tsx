@@ -64,7 +64,7 @@ const STANDARD_ITEMS = {
 export function useSessionMenuEntries(
   actions: SessionMenuActions,
   readState: () => MenuState,
-  options: { openInExtra?: () => readonly MenuEntry[] } = {},
+  options: { openInExtra?: () => readonly MenuEntry[]; prewarmOwners?: () => boolean } = {},
 ) {
   const owner = getOwner();
   const state = readState();
@@ -146,7 +146,7 @@ export function useSessionMenuEntries(
         </>
       ),
       children: state.compact ? undefined : () => body(entry.view),
-      prewarm: entry.view === "assign-owner",
+      prewarm: entry.view === "assign-owner" && (options.prewarmOwners?.() ?? true),
       closeOnSelect: false,
       onBeforeShow: entry.view === "icon" ? appearance.prepare : undefined,
     };

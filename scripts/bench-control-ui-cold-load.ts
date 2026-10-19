@@ -1024,17 +1024,40 @@ try {
           .length,
       }));
       const trigger = ".chat-header-session-menu__trigger";
-      await page.locator(trigger).hover();
-      const header = await probeColdLoadOverlays(page, artifactDir, run, [
-        ["session", trigger, ".chat-header-session-menu__panel .oc-menu-item"],
-      ]);
-      await page.locator(trigger).click();
+      const measure = async (prefix: string) => {
+        const header = await probeColdLoadOverlays(page, artifactDir, run, [
+          [`${prefix}session`, trigger, ".chat-header-session-menu__panel .oc-menu-item"],
+        ]);
+        await page.evaluate(
+          (selector) => document.querySelector<HTMLButtonElement>(selector)!.click(),
+          trigger,
+        );
+        await page.locator('.chat-header-session-menu__panel[data-phase="open"]').waitFor();
+        const owners = await probeColdLoadOverlays(page, artifactDir, run, [
+          [`${prefix}owners`, '[data-value="submenu:assign-owner"]', ".session-menu__avatar"],
+        ]);
+        await page.keyboard.press("Escape");
+        return { ...header.firstOpen, ...owners.firstOpen };
+      };
+      // Measure the owner branch without pointer/focus intent on a fresh reload.
+      await page.evaluate(
+        (selector) => document.querySelector<HTMLButtonElement>(selector)!.click(),
+        trigger,
+      );
       await page.locator('.chat-header-session-menu__panel[data-phase="open"]').waitFor();
-      const owners = await probeColdLoadOverlays(page, artifactDir, run, [
-        ["owners", '[data-value="submenu:assign-owner"]', ".session-menu__avatar"],
+      const cold = await probeColdLoadOverlays(page, artifactDir, run, [
+        ["cold-owners", '[data-value="submenu:assign-owner"]', ".session-menu__avatar"],
       ]);
-      await page.keyboard.press("Escape");
-      sessionMenuDetails = { closed, firstOpen: { ...header.firstOpen, ...owners.firstOpen } };
+      await restoreColdLoadWarmState(page, warmStorage);
+      await page.mouse.move(0, 0);
+      sidebarLists = createTeamScaleSidebarListOwner(fixture.sidebarListInput);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await settle();
+      if (captureMs) {
+        await page.waitForFunction((duration) => performance.now() >= duration, captureMs);
+      }
+      await page.locator(trigger).hover();
+      sessionMenuDetails = { closed, coldOpen: cold.firstOpen, firstOpen: await measure("") };
     }
     const overlays = values["overlay-probe"]
       ? await probeColdLoadOverlays(

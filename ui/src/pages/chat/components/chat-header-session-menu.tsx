@@ -116,9 +116,10 @@ function ChatHeaderSessionMenuContent(
   const [compactView, setCompactView] = createSignal<CompactMenuView>("root");
   const [open, setOpen] = createSignal(false);
   const [intent, setIntent] = createSignal(false);
-  nativeListener("pointerenter", () => setIntent(true))(host);
-  nativeListener("focusin", () => setIntent(true))(host);
-  const preparation = () => liveProps.prewarm && (intent() || open());
+  const pointerIntent = nativeListener("pointerenter", () => setIntent(true));
+  const focusIntent = nativeListener("focus", () => setIntent(true));
+  const preparation = () => liveProps.prewarm;
+  const ownerPreparation = () => liveProps.prewarm === true && intent();
   const presentation = createParkedProjection(() => ({ ...liveProps }), open, preparation);
   const props = createProjection(presentation, {}, { key: "id" });
   let menu: MenuHandle | undefined;
@@ -145,9 +146,10 @@ function ChatHeaderSessionMenuContent(
     readState,
     (action) => props.onAction(action),
     close,
-    createSessionOwnerMenu(open, preparation),
+    createSessionOwnerMenu(open, ownerPreparation),
   );
   const view = useSessionMenuEntries(actions, readState, {
+    prewarmOwners: ownerPreparation,
     openInExtra: () => [
       {
         id: "continue-in-terminal",
@@ -486,6 +488,8 @@ function ChatHeaderSessionMenuContent(
       onSelect={select}
       ref={(handle) => {
         menu = handle;
+        pointerIntent(handle.overlay.trigger!);
+        focusIntent(handle.overlay.trigger!);
         stopShortcut = listen(handle.overlay.surface, "keydown", shortcut, true);
       }}
       onEscape={(event) => actions.handleKeydown(event, view.appearance)}

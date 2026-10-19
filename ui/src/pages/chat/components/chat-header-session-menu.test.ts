@@ -253,10 +253,12 @@ describe("chat header session menu", () => {
         }
       };
       prepare();
-      expect(panel(menu).querySelectorAll('[role^="menuitem"]')).toHaveLength(0);
+      expect(item(menu, "Rename…")).toBeDefined();
       expect(menu.querySelectorAll(".session-menu__avatar")).toHaveLength(0);
       if (intent === "pointer") {
-        menu.dispatchEvent(new PointerEvent("pointerenter"));
+        menu
+          .querySelector(".chat-header-session-menu__trigger")!
+          .dispatchEvent(new PointerEvent("pointerenter"));
       } else {
         menu.querySelector<HTMLButtonElement>(".chat-header-session-menu__trigger")!.focus();
       }
