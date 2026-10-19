@@ -98,8 +98,9 @@ suite.define(() => {
 
       const { loadOrCreateDeviceIdentity, publicKeyRawBase64UrlFromPem } =
         await import("../../../src/infra/device-identity.js");
-      const identityPath = path.join(state.stateDir, `device-alias-proof.sqlite`);
-      const identity = loadOrCreateDeviceIdentity({ path: identityPath });
+      const identity = loadOrCreateDeviceIdentity({
+        env: { OPENCLAW_STATE_DIR: path.join(state.stateDir, "device-alias-proof") },
+      });
       await approvePairing({
         deviceId: identity.deviceId,
         publicKey: publicKeyRawBase64UrlFromPem(identity.publicKeyPem),

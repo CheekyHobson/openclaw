@@ -154,7 +154,7 @@ suite.define(() => {
         });
         state.applyEnv();
         const orphan = loadOrCreateDeviceIdentity({
-          path: path.join(state.stateDir, "legacy-device.sqlite"),
+          env: { OPENCLAW_STATE_DIR: path.join(state.stateDir, "legacy-device") },
         });
         const orphanRequest = await requestDevicePairing({
           deviceId: orphan.deviceId,
