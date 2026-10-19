@@ -1,5 +1,6 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { assert, expect, it, vi } from "vitest";
+import { renderAssistantRequestFailureCopy } from "../../agents/failover/assistant-request-failure-copy.js";
 import { appendSessionManagerActor } from "../../agents/sessions/session-manager-actor-append.js";
 import { formatErrorMessageWithCode } from "../../infra/errors.js";
 import { classifyGatewayStorageFailure } from "../../infra/sqlite-error-diagnostics.js";
@@ -731,10 +732,17 @@ it.each([
     }),
     "SQLITE_FULL",
     "unknown",
+    false,
   ],
-  [new Error("database or disk is full"), "SQLITE_FULL", "unknown-result"],
-  [new Error("Ordinary reply lost"), "session_actor_reconciliation", "unknown"],
-] as const)("retains the reconciliation cause: %s (%s, %s)", async (cause, expected, reply) => {
+  [new Error("database or disk is full"), "SQLITE_FULL", "unknown-result", false],
+  [new Error("Ordinary reply lost"), "session_actor_reconciliation", "unknown", false],
+  [
+    Object.assign(new Error("database or disk is full"), { errcode: 13 }),
+    "SQLITE_FULL",
+    "normal",
+    true,
+  ],
+] as const)("retains %s (%s, %s)", async (cause, expected, reply, rollback) => {
   await withActor(async ({ actor, commands, fault }) => {
     const initial = await actor.read(authority);
     if (actor.target.database.kind !== "file") {
@@ -761,6 +769,8 @@ it.each([
     expect(retained.isCurrent()).toBe(true);
     fault.reply = reply;
     fault.replyError = cause;
+    fault.transactionError = rollback ? cause : undefined;
+    fault.settlementLost = rollback;
     const unknown = await actor.patch(
       activity("unknown", 456, { expected: rolledBack.version }),
       authority,
@@ -781,6 +791,13 @@ it.each([
       failure = error;
     }
     expect(classifyGatewayStorageFailure(failure)).toBe(expected);
+    if (expected === "SQLITE_FULL") {
+      expect(
+        renderAssistantRequestFailureCopy({
+          storageFailure: classifyGatewayStorageFailure(failure),
+        }),
+      ).toContain("disk is full. Free up space");
+    }
     const diagnostic = formatErrorMessageWithCode(failure);
     expect(diagnostic).toContain("Session actor requires reconciliation before another command");
     expect(diagnostic).toContain(cause.message);
@@ -794,7 +811,9 @@ it.each([
     ).rejects.toSatisfy((error: unknown) => classifyGatewayStorageFailure(error) === expected);
     expect(commands).toHaveLength(before);
     fault.reply = "normal";
-    expect((await actor.read(authority)).entry?.updatedAt).toBe(456);
+    expect((await actor.read(authority)).entry?.updatedAt).toBe(
+      rollback ? initial.entry?.updatedAt : 456,
+    );
   });
 });
 

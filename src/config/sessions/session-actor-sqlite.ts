@@ -265,7 +265,7 @@ export function createSqliteSessionActorExecutor(
               unknown(
                 reply.ok
                   ? new Error(message, {
-                      cause: reply.value.kind === "unknown" ? reply.value.error : undefined,
+                      cause: reply.value.kind !== "committed" ? reply.value.error : undefined,
                     })
                   : reply.error,
               );

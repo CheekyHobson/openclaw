@@ -30,6 +30,7 @@ import { createSessionCompoundWorkerFixture } from "./session-compound-worker.te
 type Fault = {
   reply: "normal" | "lost" | "unknown" | "unknown-result";
   replyError?: Error;
+  transactionError?: Error;
   settlementLost?: boolean;
   workerPublicationFailure?: boolean;
   incompleteOutcomeTransfer?: boolean;
@@ -79,7 +80,13 @@ function createFixture() {
         open: () => database,
         admit: (stage, publication) => admit(stage, publication),
         writeTransaction: (_label, _owner, write) => {
-          const result = runOpenClawAgentWriteTransaction(write, options);
+          const result = runOpenClawAgentWriteTransaction((db) => {
+            const value = write(db);
+            if (fault.transactionError) {
+              throw fault.transactionError;
+            }
+            return value;
+          }, options);
           if (fault.workerPublicationFailure) {
             throw new Error("Worker publication failed");
           }
