@@ -1,6 +1,8 @@
+// Exposes generic path guard helpers with fs-safe defaults.
 import path from "node:path";
 import { isPathInside } from "@openclaw/fs-safe/path";
 
+// Generic path guard facade for containment checks and safe relative paths.
 export {
   hasNodeErrorCode,
   isNotFoundPathError,
