@@ -16,13 +16,22 @@ const state = vi.hoisted(() => {
   return {
     config: initialConfig,
     catalog,
-    loadConfig: vi.fn<() => OpenClawConfig>(),
+    loadConfig: vi.fn<() => OpenClawConfig | null>(),
     loadOwner: vi.fn<(_params: unknown) => Promise<Pick<Owner, "modelCatalog">>>(),
     publishedOwner: vi.fn<(_params: unknown) => Owner | undefined>(),
   };
 });
 
-vi.mock("../config/config.js", () => ({ getRuntimeConfig: state.loadConfig }));
+vi.mock("../config/config.js", () => ({
+  getRuntimeConfig: () => {
+    const snapshot = state.loadConfig();
+    if (!snapshot) {
+      throw new Error("Runtime config is not prepared");
+    }
+    return snapshot;
+  },
+  getRuntimeConfigSnapshot: state.loadConfig,
+}));
 vi.mock("../config/runtime-source-projection.js", () => ({
   projectConfigOntoRuntimeSourceSnapshot: (snapshot: OpenClawConfig) => snapshot,
 }));
@@ -103,17 +112,12 @@ describe("context cache lifecycle", () => {
     expect(state.loadConfig).not.toHaveBeenCalled();
   });
 
-  it("retries config loading only after backoff", async () => {
-    vi.useFakeTimers();
+  it("uses prepared config as soon as it is published", async () => {
     state.config = config("openrouter", model(sonnet, 654_321));
-    state.loadConfig.mockImplementationOnce(() => {
-      throw new Error("transient");
-    });
+    state.loadConfig.mockReturnValueOnce(null);
     expectTokens(sonnet, undefined);
     expect(state.loadConfig).toHaveBeenCalledTimes(1);
-    expectTokens(sonnet, undefined);
-    expect(state.loadConfig).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(1_000);
+    expect(state.loadOwner).not.toHaveBeenCalled();
     expectTokens(sonnet, 654_321);
     expect(state.loadConfig).toHaveBeenCalledTimes(2);
     await context.ensureContextWindowCacheLoaded();
