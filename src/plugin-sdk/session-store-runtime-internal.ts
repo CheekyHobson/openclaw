@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
+import { preserveResetSessionPresentation } from "../config/sessions/reset-preserved-presentation.js";
 import {
   applySessionEntryLifecycleMutation,
   type SessionAccessScope,
@@ -115,6 +116,7 @@ export async function replaceArchivedSubagentSession(params: {
                   sessionKey,
                   previous: currentEntry,
                   next: {
+                    ...preserveResetSessionPresentation(currentEntry),
                     sessionId: randomUUID(),
                     lifecycleRevision: randomUUID(),
                     updatedAt: now,

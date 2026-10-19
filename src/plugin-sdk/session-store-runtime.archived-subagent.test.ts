@@ -50,6 +50,8 @@ it.each([
         sessionId: "archived-worker",
         updatedAt: Date.now(),
         archivedAt: 1,
+        visibility: "draft" as const,
+        label: "Private worker",
         ...(pluginOwnerId !== undefined ? { pluginOwnerId } : {}),
       };
       await replaceSessionEntry(scope, entry);
@@ -88,6 +90,7 @@ it.each([
         const fresh = await getSessionEntryAsync(scope);
         expect(fresh?.sessionId).not.toBe(entry.sessionId);
         expect(fresh?.archivedAt).toBeUndefined();
+        expect(fresh).toMatchObject({ visibility: "draft", label: "Private worker" });
       }
     });
   },
