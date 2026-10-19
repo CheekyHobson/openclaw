@@ -18,6 +18,7 @@ import {
   gitFilesystemEnvironmentRevision,
 } from "../infra/git-worker-context.js";
 import type { GitWorkerOperations } from "../infra/git-worker-contract.js";
+import { pruneMapToMaxSize } from "../infra/map-size.js";
 import {
   gitOutput,
   isAncestor,
@@ -133,6 +134,8 @@ type GitInstallationFiles = { revision: string; config: string[]; attributes: st
 let gitInstallationFiles:
   | { key: string; promise: Promise<GitInstallationFiles | null> }
   | undefined;
+// Worker retirement drops these bounded observations of externally owned checkouts.
+const smallDiffRevisions = new Map<string, { fingerprint: string; revision: string }>();
 
 async function readGitInstallationFiles(
   root: string,
@@ -359,6 +362,54 @@ async function readCheckoutDiffRevision(
       observe(nodePath.join(objects, child));
     }
   }
+  // Preserve the zero-Git path for small idle checkouts. Any filesystem churn
+  // revalidates through Git; only Git's semantic revision invalidates the diff.
+  const semanticBudget = remaining;
+  const fingerprint = (() => {
+    try {
+      const files = [root];
+      const pending = [root];
+      for (const parent of pending) {
+        const handle = fs.opendirSync(parent);
+        try {
+          for (let entry; (entry = handle.readSync());) {
+            if (entry.name === ".git") {
+              if (parent !== root) {
+                return null;
+              }
+              continue;
+            }
+            const file = nodePath.join(parent, entry.name);
+            if (files.push(file) > remaining - 2) {
+              return null;
+            }
+            if (entry.isDirectory()) {
+              pending.push(file);
+            }
+          }
+        } finally {
+          handle.closeSync();
+        }
+      }
+      const stamp = hash.copy();
+      observe(nodePath.join(gitDir, "HEAD"), false, stamp);
+      observe(nodePath.join(gitDir, "index"), false, stamp);
+      for (const file of files.toSorted()) {
+        observe(file, true, stamp);
+      }
+      return stamp.digest("hex");
+    } catch {
+      return null; // Optional memo admission must not disable the semantic revision.
+    }
+  })();
+  remaining = semanticBudget;
+  const memoKey = JSON.stringify([root, environment, previousPaths.toSorted()]);
+  const memo = smallDiffRevisions.get(memoKey);
+  smallDiffRevisions.delete(memoKey);
+  if (fingerprint && memo?.fingerprint === fingerprint) {
+    smallDiffRevisions.set(memoKey, memo);
+    return memo.revision;
+  }
   const status = await runPullRequestGit(
     root,
     [
@@ -420,13 +471,18 @@ async function readCheckoutDiffRevision(
   for (const file of [...attributes].toSorted()) {
     observe(file);
   }
-  return JSON.stringify({
+  const revision = JSON.stringify({
     head: head.digest("hex"),
     index: index.digest("hex"),
     untrackedSet: untrackedSet.digest("hex"),
     worktreeMtime: worktreeMtime.digest("hex"),
     metadata: hash.digest("hex"),
   });
+  if (fingerprint) {
+    smallDiffRevisions.set(memoKey, { fingerprint, revision });
+    pruneMapToMaxSize(smallDiffRevisions, 64);
+  }
+  return revision;
 }
 
 function readDefaultRef(head: ReturnType<typeof readCheckoutHead>): string | null | undefined {

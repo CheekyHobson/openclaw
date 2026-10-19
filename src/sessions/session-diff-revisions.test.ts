@@ -214,6 +214,8 @@ it.skipIf(process.platform === "win32")(
       expect(full.files[0]?.patch).toContain("+after");
       await read(); // Admit displayed paths' attribute dependencies.
       const commands = vi.spyOn(execRunner, "runCommandBuffersWithTimeout");
+      expect(await read()).toEqual(full);
+      expect(commands.mock.calls.length).toBe(0);
       await write("ignored.txt", "rebuilt output\n");
       await fs.utimes(path.join(root, ".git/index"), new Date(0), new Date(0));
       expect(await read()).toEqual(full);

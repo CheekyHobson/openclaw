@@ -548,6 +548,10 @@ Ignored build output and index stat refreshes do not invalidate a result.
 Unchanged large checkouts still run one read-only Git status check per shared
 validation, but reuse diff collection. Unsupported layouts and inventories that
 exceed the bounded revision budget keep fresh diff reads.
+Small idle checkouts reuse the semantic revision while their complete filesystem
+fingerprint is unchanged, avoiding a Git subprocess on each poll. This worker-local
+memo is bounded to 64 entries and retains the existing 10,000-observation metadata
+budget; any filesystem change requires Git validation again.
 
 Only completed local cache reads have these outcomes. Remote repository reads,
 unknown sessions and failures before cache selection retain the normal RPC
