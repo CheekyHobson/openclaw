@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { createEffect, createMemo, For, onSettled, Show } from "solid-js";
+import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import type { SessionWorkspaceListResult } from "../../../api/types.ts";
 import { fileKindForPath } from "../../../components/file-kind.ts";
 import { Icon, type IconName } from "../../../components/solid/icon.tsx";
@@ -8,6 +8,7 @@ import { PanelLoadingSkeleton } from "../../../components/solid/panel-loading-sk
 import { formatByteSize } from "../../../lib/format.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { liveValue } from "../../../lib/reactive/live-value.ts";
+import { createScrollPosition } from "../../../lib/reactive/scroll-state.ts";
 import type {
   SessionWorkspaceFilter,
   SessionWorkspaceProps,
@@ -160,14 +161,15 @@ function MobileFolderHeader(props: {
   location: Extract<SessionWorkspaceMobileLocation, { kind: "folder" }>;
   onBrowsePath: SessionWorkspaceProps["onBrowsePath"];
 }) {
-  let trail!: HTMLDivElement;
+  const [trail, setTrail] = createSignal<HTMLDivElement>();
   // Each folder destination reveals its current crumb without scrolling the outer host.
-  createEffect(
-    () => props.location.breadcrumbs.at(-1)?.path,
-    () => {
-      trail.scrollLeft = trail.scrollWidth;
+  createScrollPosition(() => ({
+    restore: {
+      identity: [trail(), props.location.breadcrumbs.at(-1)?.path],
+      target: trail(),
+      left: "end",
     },
-  );
+  }));
   return (
     <div class="chat-workspace-mobile__folder-header">
       <button
@@ -178,12 +180,7 @@ function MobileFolderHeader(props: {
       >
         <Icon name="chevronLeft" />
       </button>
-      <div
-        class="chat-workspace-mobile__breadcrumbs"
-        ref={(element) => {
-          trail = element;
-        }}
-      >
+      <div class="chat-workspace-mobile__breadcrumbs" ref={setTrail}>
         <For each={props.location.breadcrumbs} keyed={(crumb) => crumb.path}>
           {(crumb, index) => (
             <>
