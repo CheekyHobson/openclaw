@@ -18,7 +18,6 @@ import { elementRef } from "../../../lib/reactive/element-ref.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { HoverMarquee } from "../../../lib/solid/hover-marquee.tsx";
 import { PaneDetails, PaneHeaderPresence, PaneSubagentStop } from "../chat-pane-header-view.tsx";
-
 import { usePanePresentation } from "../chat-pane-presentation.ts";
 import {
   ChatPanelHeaderActions,
@@ -28,12 +27,10 @@ import {
 import { AgentCrumb, IdentityCrumbs, ProjectCrumb } from "./chat-pane-header-identity.tsx";
 import type { ChatPaneHeaderPresentation, ChatPaneHeaderProps } from "./chat-pane-header.types.ts";
 import { ChatPaneMobileComposition } from "./chat-pane-mobile-composition.tsx";
-
 import { ChatPanePlacement } from "./chat-pane-placement.tsx";
 import { ChatPaneVersionsMenu } from "./chat-pane-versions-menu.tsx";
 import { ChatSessionPublicIndicator, ChatSessionSharing } from "./chat-session-sharing.solid.tsx";
 import { ContinueInTerminalDialog } from "./continue-in-terminal-dialog.tsx";
-
 
 export function PaneHeaderView(props: ChatPaneHeaderPresentation) {
   return (
@@ -506,7 +503,6 @@ function ChatPaneHeaderChrome(
                   />
                 </button>
               </openclaw-tooltip>
-
             </Show>
           </div>
         </div>

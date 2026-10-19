@@ -416,7 +416,6 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
       ownerViewing,
       showOwner: showOwnerChip && !this.mergedChrome && !detailsControl,
     });
-
     this.headerBoardMenu = this.pageBoardWidgetMenu(currentLayout);
     const boardWidgetMenu = this.headerBoardMenuMemo.read(
       [this.headerBoardMenu?.widget, this.headerBoardMenu?.tabs, this.headerBoardMenu?.canMutate],

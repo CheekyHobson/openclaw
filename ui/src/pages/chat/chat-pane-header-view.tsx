@@ -1,7 +1,6 @@
 import { onCleanup, type Element } from "solid-js";
 import { Icon } from "../../components/solid/icon.tsx";
 import type { PresentationValue } from "../../lib/presentation.ts";
-import { elementRef } from "../../lib/reactive/element-ref.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import type { ElementProperties } from "../../types/solid-elements.d.ts";
 import type { ChatMobileHost } from "./chat-mobile-host.ts";
@@ -74,8 +73,6 @@ export function PaneHeaderPresence(props: PresenceProps) {
     />
   );
 }
-
-
 
 declare module "@solidjs/web" {
   namespace JSX {
