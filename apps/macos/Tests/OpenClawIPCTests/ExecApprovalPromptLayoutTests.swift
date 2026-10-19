@@ -1,11 +1,46 @@
 import AppKit
 import OpenClawKit
 import Testing
+import WebKit
 @testable import OpenClaw
 
 @Suite(.serialized)
 @MainActor
 struct ExecApprovalPromptLayoutTests {
+    @Test func `dashboard confirmation sheets refuse computer input until answered`() async throws {
+        _ = AppKitTestSupport.application
+        let document = try ControlUIDocumentHost(
+            url: #require(URL(string: "https://gateway.example")),
+            auth: .unauthenticated,
+            websiteDataStore: .nonPersistent(),
+            installCapabilities: { _ in })
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        window.orderBack(nil)
+        defer { window.close() }
+
+        let accepted = await withCheckedContinuation { continuation in
+            document.confirm(message: "Allow this action?", host: "gateway.example", parent: window) {
+                continuation.resume(returning: $0)
+            }
+            #expect(ApprovalPromptState.shared.isPending)
+            #expect(window.attachedSheet?.sharingType == NSWindow.SharingType.none)
+            #expect(throws: ComputerActionService.ComputerActionError.self) {
+                try ApprovalPromptState.shared.checkComputerAction(.key)
+            }
+            if let sheet = window.attachedSheet {
+                window.endSheet(sheet, returnCode: .alertFirstButtonReturn)
+            } else {
+                window.close()
+            }
+        }
+        #expect(accepted)
+    }
+
     @Test func `pending approval refuses computer input before permissions or dispatch`() async throws {
         let reservation = try #require(ExecApprovalsPromptPresenter.reservePromptForTesting())
         defer { ExecApprovalsPromptPresenter.releasePromptForTesting(id: reservation) }

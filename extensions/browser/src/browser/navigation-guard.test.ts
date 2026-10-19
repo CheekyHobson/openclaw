@@ -13,6 +13,23 @@ import {
   InvalidBrowserNavigationUrlError,
 } from "./navigation-guard.js";
 
+// mock-isolation: Pin the local interface independently of the host running CI.
+vi.mock("node:os", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:os")>()),
+  networkInterfaces: () => ({
+    fixture: [
+      {
+        address: "192.168.50.10",
+        netmask: "255.255.255.0",
+        family: "IPv4",
+        mac: "00:00:00:00:00:01",
+        internal: false,
+        cidr: "192.168.50.10/24",
+      },
+    ],
+  }),
+}));
+
 function createLookupFn(address: string): LookupFn {
   const family = address.includes(":") ? 6 : 4;
   return vi.fn(async () => [{ address, family }]) as unknown as LookupFn;
@@ -80,6 +97,30 @@ describe("browser navigation guard", () => {
       assertBrowserNavigationResultAllowed({ url: "http://127.0.0.1:19443/", ssrfPolicy }),
     ).rejects.toThrow("cannot access this Gateway's Control UI");
   });
+
+  it.each([
+    { name: "navigation", check: assertBrowserNavigationAllowed },
+    { name: "current tab", check: assertBrowserNavigationResultAllowed },
+  ])(
+    "blocks a local Control UI DNS alias during $name using its existing lookup",
+    async ({ check }) => {
+      setRuntimeConfigSnapshot({
+        gateway: {
+          port: 19443,
+          controlUi: { dangerouslyAllowHostHeaderOriginFallback: true },
+        },
+      });
+      const lookupFn = createLookupFn("192.168.50.10");
+      await expect(
+        check({
+          url: "http://workstation.local:19443/approvals",
+          lookupFn,
+          ssrfPolicy: { dangerouslyAllowPrivateNetwork: true },
+        }),
+      ).rejects.toThrow("cannot access this Gateway's Control UI");
+      expect(lookupFn).toHaveBeenCalledOnce();
+    },
+  );
 
   it("rechecks the current Control UI origin after an awaited lookup", async () => {
     const lookup = createDeferred<Awaited<ReturnType<LookupFn>>>();

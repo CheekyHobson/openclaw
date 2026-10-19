@@ -30,8 +30,18 @@ export class InvalidBrowserNavigationUrlError extends Error {
   }
 }
 
+function browserUrlUsesGatewayPort(url: URL): boolean {
+  return (
+    Number(url.port || (url.protocol === "https:" ? 443 : 80)) ===
+    resolveGatewayPort(getRuntimeConfigSnapshot() ?? undefined)
+  );
+}
+
 /** Keep this Gateway's human decision surface out of its browser automation. */
-export function assertBrowserControlUiOriginAllowed(rawUrl: string): void {
+export function assertBrowserControlUiOriginAllowed(
+  rawUrl: string,
+  resolvedAddresses: readonly string[] = [],
+): void {
   const url = URL.parse(rawUrl);
   if (!url || !NETWORK_NAVIGATION_PROTOCOLS.has(url.protocol)) {
     return;
@@ -53,23 +63,45 @@ export function assertBrowserControlUiOriginAllowed(rawUrl: string): void {
     }
     return parsed.origin === url.origin;
   });
-  const atGatewayPort =
-    Number(url.port || (url.protocol === "https:" ? 443 : 80)) ===
-    resolveGatewayPort(config ?? undefined);
-  const hostname = normalizeHostname(url.hostname);
+  const hosts = [url.hostname, ...resolvedAddresses].map(normalizeHostname);
   const localOrigin =
-    atGatewayPort &&
-    (isLoopbackHost(hostname) ||
-      hostname === "0.0.0.0" ||
-      hostname === normalizeHostname(gateway?.customBindHost ?? "") ||
+    browserUrlUsesGatewayPort(url) &&
+    (hosts.some(
+      (host) =>
+        isLoopbackHost(host) ||
+        host === "0.0.0.0" ||
+        host === normalizeHostname(gateway?.customBindHost ?? ""),
+    ) ||
       Object.values(networkInterfaces()).some((addresses) =>
-        addresses?.some((address) => normalizeHostname(address.address) === hostname),
+        addresses?.some((address) => hosts.includes(normalizeHostname(address.address))),
       ));
   if (configuredOrigin || localOrigin) {
     throw new InvalidBrowserNavigationUrlError(
       "OpenClaw browser automation cannot access this Gateway's Control UI; ask the user to operate it.",
     );
   }
+}
+
+/** Tab management checks local aliases without imposing navigation's SSRF policy. */
+export async function assertBrowserControlUiTabAllowed(
+  rawUrl: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<void> {
+  assertBrowserControlUiOriginAllowed(rawUrl);
+  const url = URL.parse(rawUrl);
+  if (
+    !url ||
+    !NETWORK_NAVIGATION_PROTOCOLS.has(url.protocol) ||
+    !browserUrlUsesGatewayPort(url) ||
+    isIP(normalizeHostname(url.hostname)) !== 0
+  ) {
+    return;
+  }
+  const resolved = await resolvePinnedHostnameWithPolicy(url.hostname, {
+    policy: { dangerouslyAllowPrivateNetwork: true },
+    signal: options.signal,
+  });
+  assertBrowserControlUiOriginAllowed(rawUrl, resolved.addresses);
 }
 
 /** Reject credentials and the Control UI before any navigation transport dispatch. */
@@ -188,13 +220,13 @@ export async function assertBrowserNavigationAllowed(
     );
   }
 
-  await resolvePinnedHostnameWithPolicy(parsed.hostname, {
+  const resolved = await resolvePinnedHostnameWithPolicy(parsed.hostname, {
     lookupFn: opts.lookupFn,
     policy: opts.ssrfPolicy,
     signal: opts.signal,
   });
   // Config can change while DNS is pending; use the published owner again before dispatch.
-  assertBrowserControlUiOriginAllowed(parsed.href);
+  assertBrowserControlUiOriginAllowed(parsed.href, resolved.addresses);
 }
 
 /**

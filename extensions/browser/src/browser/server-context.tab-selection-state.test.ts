@@ -33,6 +33,7 @@ afterEach(async () => {
   globalThis.fetch = originalFetch;
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   volatileTabsBySession().delete("agent:main:eviction");
 });
 
@@ -166,6 +167,44 @@ describe("browser tab selection and ownership", () => {
       );
       expect(runtime.lastTargetId).toBeNull();
       expect(fetchMock.mock.calls.every(([url]) => String(url).includes("/json/list"))).toBe(true);
+    },
+  );
+
+  it.each(["ensureTabAvailable", "focusTab", "closeTab"] as const)(
+    "refuses %s on an existing Control UI DNS alias before browser effects",
+    async (operation) => {
+      vi.stubEnv("OPENCLAW_GATEWAY_PORT", "19443");
+      setRuntimeConfigSnapshot({
+        gateway: { port: 19443, bind: "custom", customBindHost: "93.184.216.34" },
+      });
+      const { openclaw, runtime, fetchMock } = listOnly(() => [
+        page("APPROVAL", "http://workstation.local:19443/approvals"),
+      ]);
+      await expect(openclaw[operation]("APPROVAL")).rejects.toThrow(
+        "cannot access this Gateway's Control UI",
+      );
+      expect(runtime.lastTargetId).toBeNull();
+      expect(fetchMock.mock.calls.every(([url]) => String(url).includes("/json/list"))).toBe(true);
+    },
+  );
+
+  it.each(["ensureTabAvailable", "focusTab", "closeTab"] as const)(
+    "keeps %s available for other local apps without applying navigation policy",
+    async (operation) => {
+      vi.stubEnv("OPENCLAW_GATEWAY_PORT", "19443");
+      const { openclaw, state } = setup(async (url) =>
+        url.includes("/json/list")
+          ? Response.json([page("APP", "http://127.0.0.1:19444/")])
+          : new Response(),
+      );
+      state.resolved.ssrfPolicy = { dangerouslyAllowPrivateNetwork: false };
+      await expect(openclaw[operation]("APP")).resolves.toEqual(
+        operation === "ensureTabAvailable"
+          ? expect.objectContaining({ targetId: "APP" })
+          : operation === "closeTab"
+            ? "APP"
+            : undefined,
+      );
     },
   );
 
