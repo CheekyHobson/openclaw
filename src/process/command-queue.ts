@@ -49,20 +49,14 @@ export class CommandLaneTaskTimeoutError extends Error {
   constructor(
     lane: string,
     details:
-      | { cause: "task-budget"; elapsedMs: number; taskBudgetMs: number }
       | { cause: "owner-deadline"; elapsedMs: number; taskBudgetMs: number }
-      | { cause: "progress-idle"; elapsedMs: number; idleMs: number; taskBudgetMs: number }
       | { cause: "abort-grace"; elapsedMs: number; graceMs: number; taskBudgetMs: number }
       | { cause: "release-signal"; elapsedMs: number; taskBudgetMs: number },
   ) {
     const message = (() => {
       switch (details.cause) {
-        case "task-budget":
-          return `elapsed ${details.elapsedMs}ms reached task budget ${details.taskBudgetMs}ms`;
         case "owner-deadline":
           return `owner deadline reached after ${details.elapsedMs}ms`;
-        case "progress-idle":
-          return `no progress for ${details.idleMs}ms (task budget ${details.taskBudgetMs}ms, elapsed ${details.elapsedMs}ms)`;
         case "abort-grace":
           return `abort grace ${details.graceMs}ms elapsed (task budget ${details.taskBudgetMs}ms, elapsed ${details.elapsedMs}ms)`;
         case "release-signal":
