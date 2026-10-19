@@ -79,7 +79,9 @@ struct NativeExecPolicyOwnerTests {
                 approvalDecision: .allowOnce, policySnapshot: pending))
             #expect(!response.ok)
             #expect(response.error?.reason == "approval-store-unavailable")
-            #expect(response.error?.message.contains("changed before execution") == true)
+            #expect(
+                response.error?.message.contains("changed before execution") == true,
+                Comment(rawValue: response.error?.message ?? "Missing denial diagnostic"))
             #expect(!FileManager.default.fileExists(atPath: fixture.marker.path))
         }
     }
@@ -439,7 +441,10 @@ private final class NativePolicyFixture: @unchecked Sendable {
             try #require(schema.hasPrefix(self.schemaPrefix + "_"))
             let result = try await BoundedProcess.run(
                 path: "/opt/homebrew/opt/postgresql@17/bin/psql",
-                arguments: [connection, "-X", "-q", "-v", "ON_ERROR_STOP=1", "-c", "DROP SCHEMA \"\(schema)\" CASCADE"],
+                arguments: [
+                    connection, "-X", "-q", "-v", "ON_ERROR_STOP=1", "-c",
+                    "SET client_min_messages = warning; DROP SCHEMA \"\(schema)\" CASCADE",
+                ],
                 outputLimit: 4096, timeout: 15)
             try #require(result.terminationStatus == 0, "Could not remove disposable PostgreSQL schema")
         }

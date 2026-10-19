@@ -2,12 +2,13 @@ import type { Command } from "commander";
 import { validateExecApprovalsNativeRequest } from "../../packages/gateway-protocol/src/index.js";
 import { parsePersistedExecApprovals } from "../infra/exec-approvals-config.js";
 import { defaultRuntime } from "../runtime.js";
-import { readStdin, runApprovalsAction } from "./exec-approvals-cli.shared.js";
+import { formatCliError, readStdin } from "./exec-approvals-cli.shared.js";
 import {
   commitNativeExecLocal,
   loadSnapshotLocal,
   saveSnapshotLocal,
 } from "./exec-approvals-local.js";
+import { throwExpectedCliError } from "./failure-output.js";
 
 export function registerNativeExecApprovalsCli(approvals: Command): void {
   approvals
@@ -16,7 +17,7 @@ export function registerNativeExecApprovalsCli(approvals: Command): void {
     .requiredOption("--stdin", "Read one bounded native owner operation as JSON")
     .option("--json", "Keep the native result on stdout and diagnostics on stderr", true)
     .action(async () => {
-      await runApprovalsAction({ json: true }, async () => {
+      try {
         const input: unknown = JSON.parse(await readStdin());
         if (!validateExecApprovalsNativeRequest(input)) {
           throw new Error("Invalid native exec approval owner request.");
@@ -35,6 +36,8 @@ export function registerNativeExecApprovalsCli(approvals: Command): void {
           result = await commitNativeExecLocal(authorization);
         }
         defaultRuntime.writeJson(result, 0);
-      });
+      } catch (error) {
+        throwExpectedCliError(formatCliError(error));
+      }
     });
 }
