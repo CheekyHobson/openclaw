@@ -22,7 +22,7 @@ import { waitForFast } from "../test-helpers/wait-for.ts";
 import { CUSTODIAN_PANEL_TOGGLE_EVENT } from "./panel-toggle-contract.ts";
 import { buildSidebarAttentionEntries } from "./sidebar-attention-items.ts";
 import { cronPage } from "./sidebar-attention-store.test-support.ts";
-import { SidebarAttentionStoreController } from "./sidebar-attention-store.ts";
+import { SidebarAttentionStoreOwner } from "./sidebar-attention-store.ts";
 import { resolveSidebarUpdateAttention } from "./sidebar-attention-update.ts";
 import { inboxMention } from "./sidebar-inbox.test-support.ts";
 import "./sidebar-attention.tsx";
@@ -207,7 +207,7 @@ describe("sidebar attention refresh ownership", () => {
       agents: { state: { agentsList: null }, subscribe: () => () => undefined },
     } as unknown as Parameters<typeof createSidebarAttentionStore>[0];
     const store = createSidebarAttentionStore(sources);
-    store.activate(SidebarAttentionStoreController);
+    store.activate(SidebarAttentionStoreOwner);
     stores.add(store);
     const provider = createApplicationContextProvider({
       ...sources,
@@ -235,6 +235,55 @@ describe("sidebar attention refresh ownership", () => {
     flush();
     expect(issues(element, "panel")).toBeNull();
     await waitForFast(() => expect(document.activeElement).toBe(trigger));
+  });
+
+  it("wraps panel focus across collapsed details, expanded actions and an empty tab", async () => {
+    const request = respond({
+      "cron.list": cronResponse(),
+      "cron.status": cronStatus(0),
+      "models.authStatus": authStatus(1),
+    });
+    const harness = createGatewayHarness(mockClient(request));
+    harness.update({ selfUser: { id: "alice", name: "Alice" } });
+    const { element, trigger } = await mountAttention({
+      gateway: harness.gateway,
+      agentSelection: selection("main", null),
+    });
+    await waitForFast(() => expect(issues(element, "button__count")?.textContent).toBe("1"));
+    await openPanel(element, trigger);
+    const details = attention(element, "modelAuthExpired") as HTMLDetailsElement;
+    const first = element.querySelector<HTMLButtonElement>(".sidebar-issues-panel__dismiss-shown")!;
+    const summary = details.querySelector("summary")!;
+    const dismiss = summary.querySelector<HTMLButtonElement>("button")!;
+    const wrap = (from: HTMLElement, shiftKey = false) => {
+      from.focus();
+      const event = new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey,
+        bubbles: true,
+        cancelable: true,
+      });
+      from.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    };
+
+    expect(details.open).toBe(false);
+    wrap(first, true);
+    expect(document.activeElement).toBe(dismiss);
+
+    summary.click();
+    expect(details.open).toBe(true);
+    const ask = details.querySelector<HTMLButtonElement>(
+      ".sidebar-issues-panel__body .sidebar-issues-panel__action:not(.sidebar-issues-panel__action--primary)",
+    )!;
+    wrap(ask);
+    expect(document.activeElement).toBe(first);
+
+    element.querySelector<HTMLButtonElement>("#sidebar-issues-tab-mentions")!.click();
+    flush();
+    expect(attention(element, "modelAuthExpired")).toBeNull();
+    wrap(issues(element, "panel__list")!);
+    expect(document.activeElement).toBe(element.querySelector(".sidebar-brand__icon[href]"));
   });
 
   it.each([false, true])(

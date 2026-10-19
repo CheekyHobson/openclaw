@@ -20,7 +20,6 @@ import {
   assertSubagentRegistryWriteSourceCurrent,
   SubagentRegistryMutationRejectedError,
 } from "./subagent-registry-persistence.js";
-import { publishSubagentRunChanges } from "./subagent-registry-publication.js";
 import { isRetiredSubagentExecution } from "./subagent-registry-restart-recovery-helpers.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import { getSubagentRunRuntimeKey } from "./subagent-run-generation.js";
@@ -188,6 +187,8 @@ async function restoreSubagentCompletionSource(
     continuation = await withPluginRuntimeGatewayRequestScope(
       {
         client: createSyntheticPluginRuntimeClient({
+          // Retried private inputs retain the sender fields included in their accepted hash.
+          authenticatedUserProfile: restored.authenticatedUserProfile,
           operatorRoleActor: { kind: "operator", profileId: restored.authority.profileId },
           operatorRunAuthority: restored.authority,
           scopes: [...restored.authority.scopes],
@@ -265,7 +266,7 @@ async function recoverSubagentRunGatewayOwner(
           "Subagent Gateway recovery row disappeared",
         );
       }
-      return { value: true, postimages: new Map([[current.runId, structuredClone(current)]]) };
+      return { value: true, postimages: new Map([[current.runId, { ...current }]]) };
     },
     {
       gatewayRecovery: { expected, previousResolver, resolver, gateway },
@@ -341,8 +342,6 @@ export async function bindSubagentRunGatewayOwners(params: {
     if (!isCurrent()) {
       return false;
     }
-    // Binding an existing owner must not supersede a registration already in preparation.
-    publishSubagentRunChanges([entry.childSessionKey], [entry.runId]);
   }
   return isCurrent();
 }
