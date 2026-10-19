@@ -1,5 +1,5 @@
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
-import { createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js";
+import { For, Show, createMemo, createSignal, onSettled } from "solid-js";
 import type { CronJob, CronScratchGetResult } from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { gatewayPresentationScope } from "../../app/gateway-presentation-scope.ts";
@@ -49,21 +49,43 @@ export function createMobileAutomationBinding(props: {
   let definitionDirty = true;
   let pendingDefinition: typeof state | undefined;
   const selection = createCronRouteSelection();
+  let boundScope: ReturnType<typeof scope> | undefined;
   const current = (captured = state) =>
     !disposed &&
     captured === state &&
+    boundScope === scope() &&
     captured.connected &&
     props.context.gateway.snapshot.phase === "connected" &&
     props.context.gateway.snapshot.client === captured.client &&
     hasOperatorReadAccess(props.context.gateway.snapshot.hello?.auth ?? null) &&
     host()?.isConnected === true;
   const canManage = () => readGatewayOperatorAccess(gateway.read()).canAdmin;
-  const transcript = createCronRunTranscript(publish, () => {
-    const captured = state;
-    return current(captured) && captured.client
-      ? { client: captured.client, isCurrent: () => current(captured) }
-      : null;
-  });
+  let hadTranscript = false;
+  const transcript = createCronRunTranscript(
+    () => {
+      publish();
+      if (disposed) {
+        return;
+      }
+      // open() closes the old entry first; navigation observes only the settled entry.
+      onSettled(() => {
+        if (disposed) {
+          return;
+        }
+        const closed = hadTranscript && !transcript.entry;
+        hadTranscript = Boolean(transcript.entry);
+        if (closed) {
+          props.onTranscriptClose();
+        }
+      });
+    },
+    () => {
+      const captured = state;
+      return current(captured) && captured.client
+        ? { client: captured.client, isCurrent: () => current(captured) }
+        : null;
+    },
+  );
   const scope = createMemo(
     () => {
       const snapshot = gateway.read();
@@ -88,10 +110,10 @@ export function createMobileAutomationBinding(props: {
       }
     });
   };
-  // Scope, presentation and access effects own invalidation; resolution samples current facts.
+  // The mounted scope and demand lifetimes invalidate; resolution samples current facts.
   const invalidateDefinition = () => {
     definitionDirty = true;
-    void untrack(resolve);
+    void resolve();
   };
   async function resolve() {
     const captured = state;
@@ -168,69 +190,76 @@ export function createMobileAutomationBinding(props: {
       }
     }
   }
-  createEffect(scope, ([client, connected, , id, agent, readAccess]) => {
-    state.connected = false;
-    retireCronRunsRequest(state);
-    transcript.close();
-    state = createInitialCronState({ client, connected });
-    state.cronAgentId = agent ?? null;
-    if (!readAccess) {
-      state.cronError = formatMissingOperatorReadScopeMessage("scheduled tasks");
-    }
-    const captured = state;
-    state.canRefresh = () =>
-      current(captured) && presented() && hasOperatorReadAccess(gateway.read().hello?.auth ?? null);
-    job = undefined;
-    scratch = "";
-    definitionDirty = true;
-    setTab("overview");
-    selection.bind(props.context.gateway);
-    selection.target = id ? { jobId: id, runId: null } : null;
-    selection.requested = false;
-    publish();
-    if (id && readAccess) {
-      void untrack(resolve);
-    }
+  const demand = createMemo(() => ({ presented: presented(), canManage: canManage() }), {
+    equals: (a, b) => a.presented === b.presented && a.canManage === b.canManage,
   });
-  createEffect(presented, (shown) => {
-    if (!shown) {
-      definitionDirty = true;
-    } else {
-      void untrack(resolve);
-    }
+  // Only these nonvisual resources are keyed; the retained destination keeps its DOM.
+  const lifecycle = Show({
+    get when() {
+      return scope();
+    },
+    keyed: true,
+    children: (value) => {
+      onSettled(() => {
+        const [client, connected, , id, agent, readAccess] = value;
+        boundScope = value;
+        transcript.close();
+        const captured = createInitialCronState({ client, connected });
+        state = captured;
+        state.cronAgentId = agent ?? null;
+        if (!readAccess) {
+          state.cronError = formatMissingOperatorReadScopeMessage("scheduled tasks");
+        }
+        state.canRefresh = () => current(captured) && presented();
+        job = undefined;
+        scratch = "";
+        definitionDirty = true;
+        setTab("overview");
+        selection.bind(props.context.gateway);
+        selection.target = id ? { jobId: id, runId: null } : null;
+        selection.requested = false;
+        publish();
+        const stopEvents = props.context.gateway.subscribeEvents((event) => {
+          if (event.event !== "cron" || !id || !current(captured)) {
+            return;
+          }
+          const payload = asNullableRecord(event.payload);
+          if (!payload?.jobId || payload.jobId === id) {
+            invalidateDefinition();
+          }
+        });
+        return () => {
+          captured.connected = false;
+          retireCronRunsRequest(captured);
+          stopEvents();
+        };
+      });
+      return For({
+        get each() {
+          return [demand()];
+        },
+        children: (value) => {
+          onSettled(() => {
+            if (!value.canManage && scratch) {
+              scratch = "";
+              publish();
+            }
+            if (value.presented) {
+              void resolve();
+            }
+            return () => {
+              definitionDirty = true;
+            };
+          });
+          return null;
+        },
+      });
+    },
   });
-  const access = createMemo(
-    () => [hasOperatorReadAccess(gateway.read().hello?.auth ?? null), canManage()] as const,
-    { equals: (a, b) => a[0] === b[0] && a[1] === b[1] },
-  );
-  let previousAccess = access();
-  createEffect(access, (value) => {
-    if (!value[1] && scratch) {
-      scratch = "";
-      publish();
-    }
-    const previous = previousAccess;
-    previousAccess = value;
-    // Read changes reset the scope above; only an admin-only change needs a refresh here.
-    if (value[0] === previous[0] && value[1] !== previous[1]) {
-      invalidateDefinition();
-    }
-  });
-  const stopEvents = props.context.gateway.subscribeEvents((event) => {
-    if (event.event !== "cron" || !jobId()) {
-      return;
-    }
-    const payload = asNullableRecord(event.payload);
-    if (payload?.jobId && payload.jobId !== jobId()) {
-      return;
-    }
-    invalidateDefinition();
-  });
-  onCleanup(() => {
+  onSettled(() => () => {
     disposed = true;
     state.connected = false;
     retireCronRunsRequest(state);
-    stopEvents();
     transcript.close();
   });
   const body = createMemo<SessionAutomationMobileBodyProps | undefined>(() => {
@@ -274,21 +303,8 @@ export function createMobileAutomationBinding(props: {
       },
     };
   });
-  let hadTranscript = false;
-  createEffect(
-    () => {
-      revision();
-      return transcript.entry;
-    },
-    (entry) => {
-      const closed = hadTranscript && !entry;
-      hadTranscript = Boolean(entry);
-      if (closed) {
-        props.onTranscriptClose();
-      }
-    },
-  );
   return {
+    lifecycle,
     body,
     transcript,
     revision,
