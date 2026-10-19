@@ -111,6 +111,17 @@ describe("gateway request scope", () => {
 
     expect(runtimeScope.hasGatewayContextOwner(owner, gateway)).toBe(true);
     expect(runtimeScope.hasGatewayContextOwner(owner, otherGateway)).toBe(false);
+
+    runtimeScope.bindGatewayContextResolver(first, otherGateway);
+    expect(runtimeScope.hasGatewayContextOwner(owner, gateway)).toBe(false);
+    expect(runtimeScope.hasGatewayContextOwner(owner, otherGateway)).toBe(true);
+    runtimeScope.bindGatewayContextResolver(first, second);
+    expect(runtimeScope.getCanonicalGatewayContextResolver(second)).toBeUndefined();
+    runtimeScope.bindGatewayContextResolver(first, first);
+    expect(runtimeScope.getCanonicalGatewayContextResolver(second)).toBeUndefined();
+    runtimeScope.clearGatewayContextResolver(first);
+    expect(runtimeScope.getCanonicalGatewayContextResolver(second)).toBe(first);
+
     for (const resolver of [gateway, first, second, otherGateway]) {
       expect(resolver).not.toHaveBeenCalled();
     }

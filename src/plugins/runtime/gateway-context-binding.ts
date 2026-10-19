@@ -97,17 +97,26 @@ export function getGatewayContextResolver(owner: object): GatewayContextResolver
 export function getCanonicalGatewayContextResolver(
   resolver: GatewayContextResolver,
 ): GatewayContextResolver | undefined {
-  const seen = new Set<GatewayContextResolver>();
   let current = resolver;
-  while (!seen.has(current)) {
-    seen.add(current);
+  let checkpoint = resolver;
+  let distance = 0;
+  let checkpointDistance = 1;
+  while (true) {
     const parent = getGatewayContextResolver(current);
     if (!parent) {
       return current;
     }
+    if (parent === checkpoint) {
+      return undefined;
+    }
+    // Move the cycle checkpoint at powers of two without allocating visited state.
+    if (++distance === checkpointDistance) {
+      checkpoint = parent;
+      checkpointDistance *= 2;
+      distance = 0;
+    }
     current = parent;
   }
-  return undefined;
 }
 
 /** Match the host owner without invoking a possibly retired execution resolver. */

@@ -167,8 +167,12 @@ function truncateOversizedTrajectoryEvent(
   return best;
 }
 
-function truncatedTrajectoryValue(reason: string, details: Record<string, unknown> = {}): unknown {
-  const record = createDiagnosticRecord();
+function truncatedTrajectoryValue(
+  reason: string,
+  details: Record<string, unknown> = {},
+  privateRecord = true,
+): unknown {
+  const record = createDiagnosticRecord(privateRecord);
   record.truncated = true;
   record.reason = reason;
   Object.assign(record, details);
@@ -179,13 +183,18 @@ function limitTrajectoryPayloadValue(
   value: unknown,
   depth = 0,
   seen: WeakSet<object> = new WeakSet(),
+  privateRecords = true,
 ): unknown {
   if (typeof value === "string") {
     if (value.length > TRAJECTORY_RUNTIME_DATA_STRING_MAX_CHARS) {
-      return truncatedTrajectoryValue("trajectory-field-size-limit", {
-        originalChars: value.length,
-        limitChars: TRAJECTORY_RUNTIME_DATA_STRING_MAX_CHARS,
-      });
+      return truncatedTrajectoryValue(
+        "trajectory-field-size-limit",
+        {
+          originalChars: value.length,
+          limitChars: TRAJECTORY_RUNTIME_DATA_STRING_MAX_CHARS,
+        },
+        privateRecords,
+      );
     }
     return value;
   }
@@ -193,40 +202,84 @@ function limitTrajectoryPayloadValue(
     return value;
   }
   if (seen.has(value)) {
-    return truncatedTrajectoryValue("trajectory-circular-reference");
+    return truncatedTrajectoryValue("trajectory-circular-reference", {}, privateRecords);
   }
   if (depth >= TRAJECTORY_RUNTIME_DATA_MAX_DEPTH) {
-    return truncatedTrajectoryValue("trajectory-depth-limit", {
-      limitDepth: TRAJECTORY_RUNTIME_DATA_MAX_DEPTH,
-    });
+    return truncatedTrajectoryValue(
+      "trajectory-depth-limit",
+      { limitDepth: TRAJECTORY_RUNTIME_DATA_MAX_DEPTH },
+      privateRecords,
+    );
   }
   seen.add(value);
   if (Array.isArray(value)) {
-    const limited = value
-      .slice(0, TRAJECTORY_RUNTIME_DATA_ARRAY_MAX_ITEMS)
-      .map((item) => limitTrajectoryPayloadValue(item, depth + 1, seen));
+    const sliced = value.slice(0, TRAJECTORY_RUNTIME_DATA_ARRAY_MAX_ITEMS);
+    const map = sliced.map;
+    const nativeMap =
+      Array.isArray(sliced) &&
+      !isProxy(sliced) &&
+      Object.getPrototypeOf(sliced) === Array.prototype &&
+      !Object.hasOwn(sliced, "constructor") &&
+      map === Array.prototype.map;
+    const visit = (item: unknown) =>
+      limitTrajectoryPayloadValue(item, depth + 1, seen, privateRecords && nativeMap);
+    let limited: unknown[];
+    if (nativeMap) {
+      // Own the destination: Array species can otherwise expose copies through a setter.
+      const length = sliced.length;
+      limited = new Array(length);
+      for (let index = 0; index < length; index++) {
+        if (index in sliced) {
+          Object.defineProperty(limited, index, {
+            value: visit(sliced[index]),
+            enumerable: true,
+            configurable: true,
+            writable: true,
+          });
+        }
+      }
+    } else {
+      // Custom callbacks may retain or mutate the copies; they still need descriptor projection.
+      limited = map.call(sliced, visit);
+    }
     if (value.length > TRAJECTORY_RUNTIME_DATA_ARRAY_MAX_ITEMS) {
-      limited.push(
-        truncatedTrajectoryValue("trajectory-array-size-limit", {
+      const marker = truncatedTrajectoryValue(
+        "trajectory-array-size-limit",
+        {
           originalLength: value.length,
           limitItems: TRAJECTORY_RUNTIME_DATA_ARRAY_MAX_ITEMS,
-        }),
+        },
+        privateRecords && nativeMap,
       );
+      if (nativeMap) {
+        Object.defineProperty(limited, limited.length, {
+          value: marker,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
+      } else {
+        limited.push(marker);
+      }
     }
     seen.delete(value);
     return limited;
   }
   const record = value as Record<string, unknown>;
   const keys = Object.keys(record);
-  const limited = createDiagnosticRecord();
+  const limited = createDiagnosticRecord(privateRecords);
   for (const key of keys.slice(0, TRAJECTORY_RUNTIME_DATA_OBJECT_MAX_KEYS)) {
-    limited[key] = limitTrajectoryPayloadValue(record[key], depth + 1, seen);
+    limited[key] = limitTrajectoryPayloadValue(record[key], depth + 1, seen, privateRecords);
   }
   if (keys.length > TRAJECTORY_RUNTIME_DATA_OBJECT_MAX_KEYS) {
-    limited["_truncated"] = truncatedTrajectoryValue("trajectory-object-size-limit", {
-      originalKeys: keys.length,
-      limitKeys: TRAJECTORY_RUNTIME_DATA_OBJECT_MAX_KEYS,
-    });
+    limited["_truncated"] = truncatedTrajectoryValue(
+      "trajectory-object-size-limit",
+      {
+        originalKeys: keys.length,
+        limitKeys: TRAJECTORY_RUNTIME_DATA_OBJECT_MAX_KEYS,
+      },
+      privateRecords,
+    );
   }
   seen.delete(value);
   return limited;
@@ -266,7 +319,10 @@ function isTrajectoryJsonData(value: unknown, depth = 0): boolean {
     return false;
   }
   const array = Array.isArray(value);
-  if (Object.getPrototypeOf(value) !== (array ? Array.prototype : Object.prototype)) {
+  const prototype = Object.getPrototypeOf(value);
+  if (
+    array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null
+  ) {
     return false;
   }
   const keys = Reflect.ownKeys(value).filter((key) => !array || key !== "length");

@@ -148,13 +148,16 @@ function diagnosticBytes(value: unknown, numericArrays = false): Uint8Array | un
         : undefined;
 }
 
-function isDiagnosticMediaPayload(descriptors: PropertyDescriptorMap): boolean {
-  const type = descriptors.type?.value;
+function isDiagnosticMediaPayload(
+  descriptors: PropertyDescriptorMap,
+  record?: Record<string, unknown>,
+): boolean {
+  const type = record ? record.type : descriptors.type?.value;
   if (typeof type === "string" && MEDIA_TYPE_RE.test(normalizeDiagnosticFieldName(type))) {
     return true;
   }
   for (const key of MEDIA_MIME_FIELDS) {
-    const mime = descriptors[key]?.value;
+    const mime = record ? record[key] : descriptors[key]?.value;
     if (typeof mime === "string" && MEDIA_MIME_RE.test(mime)) {
       return true;
     }
@@ -212,10 +215,13 @@ function extractDiagnosticMediaField(
 
 const diagnosticRecords = new WeakSet<object>();
 
-/** Fresh records need no native-object probe while their prototype stays ordinary. */
-export function createDiagnosticRecord(): Record<string, unknown> {
-  const record = {};
-  diagnosticRecords.add(record);
+/** Private data records: populate with assignments, then project without exposing them. */
+export function createDiagnosticRecord(privateRecord = true): Record<string, unknown> {
+  // Source keys cannot install a prototype or invoke inherited setters during population.
+  const record: Record<string, unknown> = Object.create(null);
+  if (privateRecord) {
+    diagnosticRecords.add(record);
+  }
   return record;
 }
 
@@ -255,10 +261,11 @@ export function projectDiagnosticValue(
       state.changed = true;
       return "[Truncated]";
     }
-    if (
-      !Array.isArray(value) &&
-      (!diagnosticRecords.has(value) || Object.getPrototypeOf(value) !== Object.prototype)
-    ) {
+    const record =
+      diagnosticRecords.has(value) && Object.getPrototypeOf(value) === null
+        ? (value as Record<string, unknown>)
+        : undefined;
+    if (!Array.isArray(value) && !record) {
       try {
         // Brand-check without provider getters; retain only numeric retry timing.
         Headers.prototype.has.call(value, "retry-after");
@@ -273,40 +280,48 @@ export function projectDiagnosticValue(
     // Snapshot descriptors before recursion; the map restores numeric key order from proxies.
     const descriptors: PropertyDescriptorMap = Object.create(null);
     const maxKeys = policy.maxKeys ?? 64;
-    for (let index = 0; index < Math.min(keys.length, maxKeys); index += 1) {
-      const key = keys[index];
-      if (typeof key !== "string") {
-        continue;
-      }
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (descriptor) {
-        descriptors[key] = descriptor;
+    if (!record) {
+      for (let index = 0; index < Math.min(keys.length, maxKeys); index += 1) {
+        const key = keys[index];
+        if (typeof key !== "string") {
+          continue;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (descriptor) {
+          descriptors[key] = descriptor;
+        }
       }
     }
     state.changed ||= keys.length > maxKeys;
     seen.add(value);
     const out = (Array.isArray(value) ? [] : {}) as Record<string, unknown>;
-    const rawName =
-      typeof descriptors.name?.value === "string" ? descriptors.name.value : descriptors.key?.value;
+    const name = record ? record.name : descriptors.name?.value;
+    const rawName = typeof name === "string" ? name : record ? record.key : descriptors.key?.value;
     const redactValueField =
       policy.redactCredentials !== false &&
       (keys.length > maxKeys ||
         (typeof rawName === "string" &&
           isCredentialFieldName(normalizeDiagnosticFieldName(rawName))));
     const redactMedia =
-      mediaPayload || keys.length > maxKeys || isDiagnosticMediaPayload(descriptors);
-    for (const key in descriptors) {
-      const descriptor = expectDefined(descriptors[key], "diagnostic descriptor");
+      mediaPayload || keys.length > maxKeys || isDiagnosticMediaPayload(descriptors, record);
+    // Owned records have only private data fields; opaque values retain the descriptor snapshot.
+    for (const key of record ? keys.slice(0, maxKeys) : Object.keys(descriptors)) {
+      if (typeof key !== "string") {
+        continue;
+      }
+      const descriptor = descriptors[key];
       if (
-        !("value" in descriptor) ||
-        (!descriptor.enumerable &&
-          (policy.propertyScope === "enumerable" ||
-            !["cause", "errors", "message", "name", "stack"].includes(key))) ||
+        (!record &&
+          (!descriptor ||
+            !("value" in descriptor) ||
+            (!descriptor.enumerable &&
+              (policy.propertyScope === "enumerable" ||
+                !["cause", "errors", "message", "name", "stack"].includes(key))))) ||
         key === "length"
       ) {
         continue;
       }
-      const child = descriptor.value;
+      const child = record ? record[key] : expectDefined(descriptor, "diagnostic descriptor").value;
       const normalized = policy.omitField?.(key) ? undefined : normalizeDiagnosticFieldName(key);
       if (
         normalized === undefined ||

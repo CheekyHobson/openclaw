@@ -121,6 +121,25 @@ describe("trajectory tool definition preparation", () => {
     expect(toJSON).not.toHaveBeenCalled();
   });
 
+  it("keeps descriptor safety for copies exposed to custom array callbacks", () => {
+    const getter = vi.fn(() => "must not be read");
+    const parameters = Object.defineProperty([], "slice", {
+      value: () => ({
+        map(visit: (value: unknown) => Record<string, unknown>) {
+          const copied = visit({ ordinary: "kept", nested: { detail: "safe" } });
+          for (const target of [copied, copied.nested]) {
+            Object.defineProperty(target, "hidden", { get: getter });
+            Object.defineProperty(target, "hostile", { enumerable: true, get: getter });
+          }
+          return copied;
+        },
+      }),
+    });
+
+    expect(projectParameters(parameters)).toEqual({ ordinary: "kept", nested: { detail: "safe" } });
+    expect(getter).not.toHaveBeenCalled();
+  });
+
   it("preserves truncation metadata without probing its records as native headers", () => {
     const has = vi.spyOn(Headers.prototype, "has");
     expect(projectParameters({ description: "x".repeat(32_769) })).toEqual({
