@@ -412,9 +412,14 @@ export async function readSessionHistoryPageInWorker(
       let retriedProjection = false;
       const readPage = () => {
         // Restoration and projection recovery can commit between attempts.
-        const tokens = captureHistoryWriteTokens(input);
+        let tokens = captureHistoryWriteTokens(input);
         if (tokens) {
-          sourceReads?.assertCurrent();
+          try {
+            sourceReads?.assertCurrent();
+          } catch {
+            // Stale discovery disables active sharing; the read keeps its existing admission.
+            tokens = undefined;
+          }
         }
         const read = () =>
           readQueuedHistory(
