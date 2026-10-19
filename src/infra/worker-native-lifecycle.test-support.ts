@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { once } from "node:events";
 import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { setImmediate as nextTurn } from "node:timers/promises";
-import { isMainThread, Worker } from "node:worker_threads";
+import { isMainThread, MessageChannel, Worker } from "node:worker_threads";
 import { createDeferredCore } from "../shared/deferred.js";
 import { drainGlobalSingletonLifecycleState } from "../shared/global-singleton.js";
 import {
@@ -12,10 +13,7 @@ import {
   withRuntimeWorkerGeneration,
 } from "./runtime-worker-generation.js";
 import { getTrackedWorkerLifecycleSnapshot } from "./worker-cpu.js";
-import {
-  captureRetainedNativeWorkerSource,
-  createRetainedNativeWorker,
-} from "./worker-native-lifecycle.js";
+import { captureRetainedNativeWorkerSource } from "./worker-native-lifecycle.js";
 import {
   assertNativeWorkerDiagnosticMatches,
   runNativeResourceLifecycle,
@@ -159,7 +157,10 @@ async function runCallbackContext() {
   let exited = false;
   let exitCode: number | undefined;
   const retained = context.run("constructor-A", () =>
-    createRetainedNativeWorker(source, { eval: true, execArgv: [] }),
+    captureRetainedNativeWorkerSource({ runtimeGeneration: undefined }).create(source, {
+      eval: true,
+      execArgv: [],
+    }),
   );
   context.run("service-B", () => {
     retained.on("message", (value) => {
@@ -215,7 +216,8 @@ async function runCallbackContext() {
 }
 
 async function runBlockedLifecycle(ending: "terminate" | "natural-exit", databasePath: string) {
-  const worker = createRetainedNativeWorker(workerSource, {
+  const source = captureRetainedNativeWorkerSource({ runtimeGeneration: undefined });
+  const worker = source.create(workerSource, {
     eval: true,
     execArgv: [],
     workerData: { childSource: sqliteChild, databasePath },
@@ -346,15 +348,11 @@ async function runGenerationLifecycle(directory: string, databasePath: string) {
           order.push("owner-close-start");
           await nextTurn();
           assert.equal(getTrackedWorkerLifecycleSnapshot().workerCount, initialWorkers);
-          const worker = createRetainedNativeWorker(
-            workerSource,
-            {
-              eval: true,
-              execArgv: [],
-              workerData: { childSource: sqliteChild, databasePath },
-            },
-            queuedOwner.source,
-          );
+          const worker = queuedOwner.source.create(workerSource, {
+            eval: true,
+            execArgv: [],
+            workerData: { childSource: sqliteChild, databasePath },
+          });
           let reply = createDeferredCore<unknown>();
           worker.on("message", (value) => reply.resolve(value));
           worker.on("error", (error) => reply.reject(error));
@@ -396,11 +394,7 @@ async function runGenerationLifecycle(directory: string, databasePath: string) {
         assert.equal(nativeJoined, true);
         assert.equal(getTrackedWorkerLifecycleSnapshot().workerCount, initialWorkers + 1);
         order.push("sibling-owner-close");
-        const sibling = createRetainedNativeWorker(
-          echoWorkerSource,
-          { eval: true, execArgv: [] },
-          siblingOwner.source,
-        );
+        const sibling = siblingOwner.source.create(echoWorkerSource, { eval: true, execArgv: [] });
         const reply = createDeferredCore<unknown>();
         sibling.on("message", reply.resolve);
         sibling.on("error", reply.reject);
@@ -467,7 +461,7 @@ async function runExplicitUnboundLifecycle() {
   );
   assert.equal(ambientReleased, true);
   process.stderr.write(`native lifecycle fixture pid=${process.pid}: explicit unbound source\n`);
-  const worker = createRetainedNativeWorker(echoWorkerSource, { eval: true, execArgv: [] }, source);
+  const worker = source.create(echoWorkerSource, { eval: true, execArgv: [] });
   const reply = createDeferredCore<unknown>();
   worker.on("message", reply.resolve);
   worker.on("error", reply.reject);
@@ -486,11 +480,7 @@ async function runExplicitUnboundLifecycle() {
   let ownerClosed = false;
   source.retain({}, async () => {
     // Already admitted owners may finish queued work while shutdown drains them.
-    const queued = createRetainedNativeWorker(
-      echoWorkerSource,
-      { eval: true, execArgv: [] },
-      idleSource,
-    );
+    const queued = idleSource.create(echoWorkerSource, { eval: true, execArgv: [] });
     const queuedReply = createDeferredCore<unknown>();
     queued.on("message", queuedReply.resolve);
     queued.on("error", queuedReply.reject);
@@ -503,7 +493,13 @@ async function runExplicitUnboundLifecycle() {
   await drainGlobalSingletonLifecycleState();
   assert.equal(ownerClosed, true);
   assert.equal(getTrackedWorkerLifecycleSnapshot().workerCount, initialWorkers);
-  assert.throws(() => source.create(echoWorkerSource, { eval: true }), /closing/);
+  const { port1: host, port2: workerPort } = new MessageChannel();
+  const closed = Promise.all([once(host, "close"), once(workerPort, "close")]);
+  assert.throws(
+    () => source.create(echoWorkerSource, { eval: true }, undefined, { host, worker: workerPort }),
+    /closing/,
+  );
+  await closed;
   const renewed = captureRetainedNativeWorkerSource({ runtimeGeneration: undefined });
   assert.notEqual(renewed, source);
   await drainGlobalSingletonLifecycleState();
