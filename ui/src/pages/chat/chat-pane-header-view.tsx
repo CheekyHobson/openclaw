@@ -1,4 +1,4 @@
-import { onCleanup } from "solid-js";
+import { onCleanup, untrack, type Element } from "solid-js";
 import { Icon } from "../../components/solid/icon.tsx";
 import type { PresentationValue } from "../../lib/presentation.ts";
 import { t } from "../../lib/reactive/i18n.ts";
@@ -12,25 +12,31 @@ export type PaneDetailsProps = {
   chat: ChatDetails["props"];
   elements: ChatDetails["elements"];
   mobile: boolean;
+  nativePresentation?: "desktop" | "mobile";
   mobileHost?: ChatMobileHost;
+  mobileBindings?: ChatDetails["mobileBindings"];
   conversationVisible?: boolean;
   externalTrigger?: boolean;
+  triggerContent?: Element;
   presentation: PresentationValue;
   setRef: (details: ChatDetails | undefined) => void;
 };
 
 export function PaneDetails(props: PaneDetailsProps) {
   const presented = usePanePresentation(() => props.presentation);
-  onCleanup(() => props.setRef(undefined));
+  onCleanup(() => untrack(() => props.setRef(undefined)));
   return (
     <openclaw-chat-details
-      ref={(element) => props.setRef(element)}
+      ref={(element) => untrack(() => props.setRef(element))}
       prop:props={props.chat}
       prop:elements={props.elements}
       prop:mobile={props.mobile}
+      prop:nativePresentation={props.nativePresentation}
       prop:mobileHost={props.mobileHost}
+      prop:mobileBindings={props.mobileBindings}
       prop:conversationVisible={props.conversationVisible ?? true}
       prop:externalTrigger={props.externalTrigger ?? false}
+      prop:triggerContent={props.triggerContent}
       prop:presented={presented()}
     />
   );
@@ -68,6 +74,7 @@ export function PaneHeaderPresence(props: PresenceProps) {
   );
 }
 
+
 declare module "@solidjs/web" {
   namespace JSX {
     interface IntrinsicElements {
@@ -80,8 +87,11 @@ declare module "@solidjs/web" {
             | "presented"
             | "mobile"
             | "mobileHost"
+            | "mobileBindings"
+            | "nativePresentation"
             | "conversationVisible"
             | "externalTrigger"
+            | "triggerContent"
           >
         >;
     }
