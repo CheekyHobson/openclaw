@@ -227,7 +227,8 @@ function limitTrajectoryPayloadValue(
     if (nativeMap) {
       // Own the destination: Array species can otherwise expose copies through a setter.
       const length = sliced.length;
-      limited = new Array(length);
+      limited = [];
+      limited.length = length;
       for (let index = 0; index < length; index++) {
         if (index in sliced) {
           Object.defineProperty(limited, index, {
