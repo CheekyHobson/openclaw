@@ -88,57 +88,36 @@ describe("Gateway operation policy reload", () => {
     expect(resolveConfigReloadMetadata(path).kind).toBe("hot");
   });
 
+  const policyConfig: OpenClawConfig = { tools: { gatewayPolicy: { allow: ["read"] } } };
   it.each([
-    {
-      name: "adding policy",
-      previous: { tools: {} },
-      next: { tools: { gatewayPolicy: { allow: ["read"] } } },
-      path: "tools.gatewayPolicy",
-    },
-    {
-      name: "changing policy",
-      previous: { tools: { gatewayPolicy: { allow: ["read"] } } },
-      next: { tools: { gatewayPolicy: { allow: [] } } },
-      path: "tools.gatewayPolicy.allow",
-    },
-    {
-      name: "removing policy",
-      previous: { tools: { gatewayPolicy: { allow: ["read"] } } },
-      next: { tools: {} },
-      path: "tools.gatewayPolicy",
-    },
-    {
-      name: "adding tools with policy",
-      previous: {},
-      next: { tools: { gatewayPolicy: { allow: ["read"] } } },
-      path: "tools.gatewayPolicy",
-    },
-    {
-      name: "removing tools with policy",
-      previous: { tools: { gatewayPolicy: { allow: ["read"] } } },
-      next: {},
-      path: "tools.gatewayPolicy",
-    },
-  ] satisfies {
-    name: string;
-    previous: OpenClawConfig;
-    next: OpenClawConfig;
-    path: string;
-  }[])("requires a Gateway restart when $name", ({ previous, next, path }) => {
-    const changedPaths = diffGatewayReloadPaths(
-      previous,
-      next,
-      listConfigReloadRefinementPrefixes(),
-    );
-    const plan = buildGatewayReloadPlan(changedPaths);
+    ["adding policy", { tools: {} }, policyConfig, "tools.gatewayPolicy"],
+    [
+      "changing policy",
+      policyConfig,
+      { tools: { gatewayPolicy: { allow: [] } } },
+      "tools.gatewayPolicy.allow",
+    ],
+    ["removing policy", policyConfig, { tools: {} }, "tools.gatewayPolicy"],
+    ["adding tools with policy", {}, policyConfig, "tools.gatewayPolicy"],
+    ["removing tools with policy", policyConfig, {}, "tools.gatewayPolicy"],
+  ] satisfies [string, OpenClawConfig, OpenClawConfig, string][])(
+    "requires a Gateway restart when %s",
+    (_name, previous, next, path) => {
+      const changedPaths = diffGatewayReloadPaths(
+        previous,
+        next,
+        listConfigReloadRefinementPrefixes(),
+      );
+      const plan = buildGatewayReloadPlan(changedPaths);
 
-    expect(plan).toMatchObject({
-      restartGateway: true,
-      restartReasons: [path],
-      hotReasons: [],
-    });
-    expect(resolveConfigReloadMetadata(path).kind).toBe("restart");
-  });
+      expect(plan).toMatchObject({
+        restartGateway: true,
+        restartReasons: [path],
+        hotReasons: [],
+      });
+      expect(resolveConfigReloadMetadata(path).kind).toBe("restart");
+    },
+  );
 
   it.each(["cloudWorkers.profiles", "cloudWorkers.profiles.build.settings.machineType"])(
     "refreshes provider activation without restarting the Gateway: %s",

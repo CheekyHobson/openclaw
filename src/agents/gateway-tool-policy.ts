@@ -85,43 +85,40 @@ function toolAllowed(policy: GatewayToolPolicyConfig, name: string): boolean {
   return policy.allow.some((entry) => normalizeToolPolicyName(entry) === name);
 }
 
-function assertCall(
-  policy: GatewayToolPolicyConfig | undefined,
-  tool: GatewayToolPolicyTarget,
-  args: unknown,
-): void {
-  if (!policy || isGatewayToolPolicyControl(tool) || isCodeModeControlTool(tool)) {
-    return;
-  }
-  const name = normalizeToolPolicyName(tool.name);
-  if (!toolAllowed(policy, name)) {
-    throw new ToolAuthorizationError(`Gateway tool policy denies tool "${name}".`);
-  }
-  const actions = policyActions(policy, name);
-  if (!hasAction(tool.parameters) && actions === undefined) {
-    return;
-  }
-  const action = isRecord(args) && typeof args.action === "string" ? args.action.trim() : undefined;
-  if (!action || !actions?.includes(action)) {
-    throw new ToolAuthorizationError(
-      `Gateway tool policy denies ${name} action "${action ?? "<missing>"}".`,
-    );
-  }
-}
-
 /** Capture the deployment policy when constructing the tool executor. */
 export function createGatewayToolPolicyAssertion(
   tool: GatewayToolPolicyTarget,
   config: OpenClawConfig | undefined = getRuntimeConfigSnapshot() ?? undefined,
 ) {
   const policy = config?.tools?.gatewayPolicy;
-  return (args: unknown): void => assertCall(policy, tool, args);
+  return (args: unknown): void => {
+    if (!policy || isGatewayToolPolicyControl(tool) || isCodeModeControlTool(tool)) {
+      return;
+    }
+    const name = normalizeToolPolicyName(tool.name);
+    if (!toolAllowed(policy, name)) {
+      throw new ToolAuthorizationError(`Gateway tool policy denies tool "${name}".`);
+    }
+    const actions = policyActions(policy, name);
+    if (!hasAction(tool.parameters) && actions === undefined) {
+      return;
+    }
+    const action =
+      isRecord(args) && typeof args.action === "string" ? args.action.trim() : undefined;
+    if (!action || !actions?.includes(action)) {
+      throw new ToolAuthorizationError(
+        `Gateway tool policy denies ${name} action "${action ?? "<missing>"}".`,
+      );
+    }
+  };
 }
 
-function applyPolicy<T extends GatewayToolPolicyTarget>(
+/** Apply the deployment policy after ordinary tool and plugin grants. */
+export function applyGatewayToolPolicy<T extends GatewayToolPolicyTarget>(
   tools: T[],
-  policy: GatewayToolPolicyConfig | undefined,
+  config: OpenClawConfig | undefined = getRuntimeConfigSnapshot() ?? undefined,
 ): T[] {
+  const policy = config?.tools?.gatewayPolicy;
   if (!policy) {
     return tools;
   }
@@ -147,17 +144,10 @@ function applyPolicy<T extends GatewayToolPolicyTarget>(
     if (!parameters) {
       return [];
     }
-    const projected = { ...tool, parameters };
     return [
-      isExecutableTool(tool) ? copyAgentToolMetadata(tool, { ...tool, parameters }) : projected,
+      isExecutableTool(tool)
+        ? copyAgentToolMetadata(tool, { ...tool, parameters })
+        : { ...tool, parameters },
     ];
   });
-}
-
-/** Apply the deployment policy after ordinary tool and plugin grants. */
-export function applyGatewayToolPolicy<T extends GatewayToolPolicyTarget>(
-  tools: T[],
-  config: OpenClawConfig | undefined = getRuntimeConfigSnapshot() ?? undefined,
-): T[] {
-  return applyPolicy(tools, config?.tools?.gatewayPolicy);
 }

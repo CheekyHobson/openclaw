@@ -220,14 +220,13 @@ export function registerHeadlessToolSearchCatalog(params: {
   const entries = applyGatewayToolPolicy([...tools], config)
     .filter(shouldCatalogTool)
     .map((tool) => {
-      const scopedTool =
-        hookContext && isToolWrappedWithBeforeToolCallHook(tool)
-          ? rewrapToolWithBeforeToolCallHook(tool, {
-              ...getBeforeToolCallHookContext(tool),
-              ...hookContext,
-            })
-          : tool;
-      return toCatalogEntry(scopedTool, undefined, hookContext);
+      const scopedTool = hookContext
+        ? rewrapToolWithBeforeToolCallHook(tool, {
+            ...getBeforeToolCallHookContext(tool),
+            ...hookContext,
+          })
+        : tool;
+      return toCatalogEntry(scopedTool);
     });
   registerToolSearchCatalog({ catalogRef, entries });
 }
@@ -474,12 +473,10 @@ export function applyToolCatalogCompaction(
     if (!hasGatewayPolicy || !toolHookContext) {
       return tool;
     }
-    return isToolWrappedWithBeforeToolCallHook(tool)
-      ? rewrapToolWithBeforeToolCallHook(tool, {
-          ...getBeforeToolCallHookContext(tool),
-          ...toolHookContext,
-        })
-      : wrapToolWithBeforeToolCallHook(tool, toolHookContext);
+    return rewrapToolWithBeforeToolCallHook(tool, {
+      ...getBeforeToolCallHookContext(tool),
+      ...toolHookContext,
+    });
   });
   const hasControlTool = params.enabled && tools.some((tool) => params.isVisibleControlTool(tool));
   const catalogRef = params.catalogRef;

@@ -14,10 +14,7 @@ import {
 import { addTestHook } from "../plugins/hooks.test-fixtures.js";
 import { createEmptyPluginRegistry } from "../plugins/registry.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
-import {
-  rewrapToolWithBeforeToolCallHook,
-  wrapToolWithBeforeToolCallHook,
-} from "./agent-tools.before-tool-call.js";
+import { wrapToolWithBeforeToolCallHook } from "./agent-tools.before-tool-call.js";
 import { finalizeAgentTools } from "./agent-tools.finalize.js";
 import { applyCodeModeCatalog, createCodeModeTools } from "./code-mode.js";
 import { resetCodeModeTestState, runUntilCompleted } from "./code-mode.test-support.js";
@@ -76,21 +73,7 @@ describe("required Gateway tool policy", () => {
     );
   });
 
-  it("captures deployment policy for a headless catalog without a hook context", async () => {
-    setRuntimeConfigSnapshot(config);
-    const source = actionTool();
-    const catalogRef = createToolSearchCatalogRef();
-    registerHeadlessToolSearchCatalog({ catalogRef, tools: [source] });
-    const runtime = new ToolSearchRuntime({ catalogRef }, resolveToolSearchConfig(config));
-
-    await runtime.call("sessions", { action: "list", target: "main" });
-    await expect(runtime.call("sessions", { action: "patch", target: "main" })).rejects.toThrow(
-      "Gateway tool policy denies",
-    );
-    expect(source.execute).toHaveBeenCalledTimes(1);
-  });
-
-  it("normalizes tool aliases without expanding wildcard or plugin grants", () => {
+  it("normalizes tool aliases and honors an empty allowlist", () => {
     const tool = { ...actionTool(), name: "automations" };
     const [projected] = applyGatewayToolPolicy([tool, createStubTool("other")], {
       tools: { gatewayPolicy: { allow: ["cron"], actions: { cron: ["list"] } } },
@@ -145,7 +128,7 @@ describe("required Gateway tool policy", () => {
     },
   );
 
-  it.each(["rewrapped", "finalized", "compacted"] as const)(
+  it.each(["finalized", "compacted"] as const)(
     "checks final hook arguments on %s tools with assembly config",
     async (assembly) => {
       const registry = createEmptyPluginRegistry();
@@ -172,13 +155,10 @@ describe("required Gateway tool policy", () => {
         const runtime = new ToolSearchRuntime({ catalogRef }, resolveToolSearchConfig(config));
         execute = () => runtime.call("sessions", { action: "list", target: "main" });
       } else {
-        const tool =
-          assembly === "rewrapped"
-            ? rewrapToolWithBeforeToolCallHook(prewrapped, { config })
-            : expectDefined(
-                finalizeAgentTools({ tools: [prewrapped], config, hookContext: {} })[0],
-                "finalized tool",
-              );
+        const tool = expectDefined(
+          finalizeAgentTools({ tools: [prewrapped], config, hookContext: {} })[0],
+          "finalized tool",
+        );
         execute = () =>
           Promise.resolve(tool.execute("rewritten", { action: "list", target: "main" }));
       }
@@ -187,7 +167,7 @@ describe("required Gateway tool policy", () => {
     },
   );
 
-  it("uses changed deployment policy only for newly assembled catalogs and executors", async () => {
+  it("captures each headless catalog's deployment policy without a hook context", async () => {
     const source = actionTool();
     const buildRuntime = () => {
       const catalogRef = createToolSearchCatalogRef();
@@ -209,10 +189,12 @@ describe("required Gateway tool policy", () => {
     });
     await original.call("sessions", { action: "list", target: "main" });
     await replacement.call("sessions", { action: "patch", target: "main" });
-    await expect(original.call("sessions", { action: "patch", target: "main" })).rejects.toThrow();
-    await expect(
-      replacement.call("sessions", { action: "list", target: "main" }),
-    ).rejects.toThrow();
+    await expect(original.call("sessions", { action: "patch", target: "main" })).rejects.toThrow(
+      "Gateway tool policy denies",
+    );
+    await expect(replacement.call("sessions", { action: "list", target: "main" })).rejects.toThrow(
+      "Gateway tool policy denies",
+    );
     expect(source.execute).toHaveBeenCalledTimes(2);
   });
 
