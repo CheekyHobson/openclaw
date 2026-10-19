@@ -45,7 +45,7 @@ it.each([
         sessionId: "archived-worker",
         updatedAt: Date.now(),
         archivedAt: 1,
-        pluginOwnerId,
+        ...(pluginOwnerId !== undefined ? { pluginOwnerId } : {}),
       };
       await replaceSessionEntry(scope, entry);
       const operation = withPluginRuntimeGatewayRequestScope(
