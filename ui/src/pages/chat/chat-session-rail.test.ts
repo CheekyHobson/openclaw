@@ -6,6 +6,7 @@ import type { SessionObserverDigest } from "../../../../packages/gateway-protoco
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { currentThemeBranding, setCurrentThemeBranding } from "../../app/theme-branding.ts";
 import { projectOwner } from "../../lib/reactive/projection.ts";
+import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import {
   getChatAttachmentDataUrl,
@@ -16,6 +17,7 @@ import {
   requestSessionCompanionAnswer,
 } from "./chat-session-companion.ts";
 import type { ChatSessionRailElement } from "./components/chat-session-rail.tsx";
+import { DirectDictationControl } from "./composer-direct-dictation.ts";
 import "./components/chat-session-rail.tsx";
 
 function digest(health: SessionObserverDigest["health"] = "on-track"): SessionObserverDigest {
@@ -437,6 +439,53 @@ describe("ChatSessionRailElement", () => {
     selection.removeAllRanges();
   });
 
+  it("offers the main composer's attachment and dictation controls", async () => {
+    const element = await mount({
+      client: createTestGatewayClient(async () => ({})),
+      companion: { turns: [], loading: false, draft: "" },
+    });
+    const attach = () => element.querySelector<HTMLButtonElement>(".agent-chat__input-btn--attach");
+    const microphone = () => element.querySelector<HTMLButtonElement>(".chat-send-btn--voice");
+    expect(attach()?.disabled).toBe(false);
+    expect(microphone()?.disabled).toBe(false);
+    expect(element.querySelector<HTMLInputElement>(".agent-chat__file-input")?.accept).toBe(
+      "image/*",
+    );
+
+    element.connected = false;
+    await element.updateComplete;
+    expect(attach()?.disabled).toBe(true);
+    expect(microphone()?.disabled).toBe(true);
+  });
+
+  it("commits active dictation before a keyboard submit sends the question", async () => {
+    const onSubmit = vi.fn();
+    const element = await mount({
+      onSubmit,
+      companion: { turns: [], loading: false, draft: "Summarize" },
+    });
+    const finishActive = vi.fn(async () => {
+      element.companion = { turns: [], loading: false, draft: "Summarize the spoken part" };
+      await element.updateComplete;
+      return true;
+    });
+    vi.spyOn(DirectDictationControl.prototype, "dictation", "get").mockReturnValue({
+      active: true,
+      finalizing: false,
+      finishActive,
+    } as never);
+
+    element
+      .querySelector("textarea")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledExactlyOnceWith("Summarize the spoken part"),
+    );
+    expect(finishActive).toHaveBeenCalledOnce();
+  });
+
   it.each([false, true])(
     "uses an empty-question fallback only for images (image: %s)",
     async (image) => {
@@ -464,7 +513,9 @@ describe("ChatSessionRailElement", () => {
           ],
         },
       });
-      expect(element.querySelector<HTMLButtonElement>(".chat-send-btn")?.disabled).toBe(!image);
+      expect(element.querySelector<HTMLButtonElement>("button[type=submit]")?.disabled).toBe(
+        !image,
+      );
       element.querySelector("form")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true }));
       element
         .querySelector("textarea")!
@@ -556,7 +607,7 @@ describe("ChatSessionRailElement", () => {
         },
       });
       const textarea = element.querySelector<HTMLTextAreaElement>("textarea")!;
-      const send = element.querySelector<HTMLButtonElement>(".chat-send-btn")!;
+      const send = element.querySelector<HTMLButtonElement>("button[type=submit]")!;
       const type = async (draft: string) => {
         textarea.value = draft;
         textarea.dispatchEvent(new InputEvent("input", { bubbles: true }));

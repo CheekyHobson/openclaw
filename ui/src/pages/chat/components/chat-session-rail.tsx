@@ -4,6 +4,7 @@ import "./chat-comment-controller.ts";
 import { createMemo, For, onSettled, Show } from "solid-js";
 import type { SessionObserverDigest } from "../../../../../packages/gateway-protocol/src/schema/sessions.js";
 import type { ControlUiSessionPullRequest } from "../../../../../src/gateway/control-ui-contract.js";
+import type { GatewayBrowserClient } from "../../../api/gateway.ts";
 import type { ChatSendShortcut } from "../../../app/settings.ts";
 import { handleMarkdownCodeBlockClick } from "../../../components/markdown-code-blocks.ts";
 import { markdownBlocksRef } from "../../../components/markdown-element-refs-solid.ts";
@@ -59,8 +60,10 @@ type ChatSessionRailProps = {
   activeRunId: string | null;
   pullRequests: ControlUiSessionPullRequest[];
   companion: ChatSessionCompanionThread;
+  client: GatewayBrowserClient | null;
   connected: boolean;
   sendShortcut: ChatSendShortcut;
+  inputDeviceId?: string;
   onSubmit?: (question: string | ChatSessionCompanionTurn) => void;
   onDraftChange?: (draft: string) => void;
   onAttachmentsChange?: ChatAttachmentControlsProps["onAttachmentsChange"];
@@ -351,10 +354,14 @@ function ChatSessionRailContent(props: ChatSessionRailProps, host: ChatSessionRa
       />
       <SessionRailComposer
         textareaRef={(element) => (textarea = element)}
+        sessionKey={props.sessionKey}
         companion={props.companion}
+        client={props.client}
         connected={props.connected}
+        presented={props.presented}
         pending={pending()}
         sendShortcut={props.sendShortcut}
+        inputDeviceId={props.inputDeviceId}
         attachmentProps={attachmentProps()}
         submit={submit}
         onDraftChange={props.onDraftChange}
@@ -376,8 +383,10 @@ defineSolidBridge<ChatSessionRailProps>("openclaw-chat-session-rail", ChatSessio
     activeRunId: { default: null, attribute: false },
     pullRequests: { default: [], attribute: false },
     companion: { default: { turns: [], loading: false, draft: "" }, attribute: false },
+    client: { default: null, attribute: false },
     connected: { default: false, attribute: false },
     sendShortcut: { default: "enter", attribute: false },
+    inputDeviceId: { default: undefined, attribute: false },
     onSubmit: { default: undefined, attribute: false },
     onDraftChange: { default: undefined, attribute: false },
     onAttachmentsChange: { default: undefined, attribute: false },
