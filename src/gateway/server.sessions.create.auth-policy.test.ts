@@ -74,17 +74,17 @@ it("retains committed initial turns through fencing and denies their final write
     }),
   );
   const resumeTurns = createDeferredCore();
-  const originalSend = chatSendOwner.handleDirectExternalChatSend;
+  const originalSend = chatSendOwner.handleCreatedSessionChatSend;
   const send = vi
-    .spyOn(chatSendOwner, "handleDirectExternalChatSend")
-    .mockImplementation(async (options) => {
+    .spyOn(chatSendOwner, "handleCreatedSessionChatSend")
+    .mockImplementation(async (options, spawned) => {
       const scenario = cases.find(({ key }) => key === options.params.sessionKey);
       assert(scenario);
       scenario.turnEntered = true;
       scenario.beforeTurn.resolve(options);
       await resumeTurns.promise;
       try {
-        await originalSend(options);
+        await originalSend(options, spawned);
       } finally {
         scenario.finishTurn.resolve();
       }

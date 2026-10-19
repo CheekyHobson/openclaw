@@ -62,7 +62,7 @@ vi.mock("../agents/subagents/spawn/subagent-spawn.runtime.js", () => ({
 }));
 // mock-isolation: Isolate external chat and cron-creator admission while checking kickoff routing.
 vi.mock("./server-methods/chat-send-external-entry.js", () => ({
-  handleDirectExternalChatSend: async (options: GatewayRequestHandlerOptions) => {
+  handleCreatedSessionChatSend: async (options: GatewayRequestHandlerOptions) => {
     kickoff.external(options);
     options.respond(true, { status: "started", runId: "scope-child-run" });
   },

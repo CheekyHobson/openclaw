@@ -325,7 +325,7 @@ test.each([
                 profile: string | undefined;
                 source: string | undefined;
               }> = [];
-              const chatSend = vi.spyOn(chatSendOwner, "handleDirectExternalChatSend");
+              const chatSend = vi.spyOn(chatSendOwner, "handleCreatedSessionChatSend");
               chatSend.mockImplementation(async ({ respond }) => {
                 const entry = loadSessionEntry({
                   sessionKey: key,

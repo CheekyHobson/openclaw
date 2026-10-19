@@ -57,7 +57,7 @@ test("sessions.create fences the first workspace write behind its diff baseline"
 
   const { ensureSessionDiffBaseline } = await import("../sessions/session-diff-baseline.js");
   let firstTurn: Promise<void> | undefined;
-  const chatSend = vi.spyOn(chatSendOwner, "handleDirectExternalChatSend");
+  const chatSend = vi.spyOn(chatSendOwner, "handleCreatedSessionChatSend");
   chatSend.mockImplementation(async ({ respond }) => {
     respond(true, { runId: "diff-first-write-run", status: "started" });
     firstTurn = (async () => {

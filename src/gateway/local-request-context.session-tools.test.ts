@@ -560,7 +560,6 @@ describe("built-in session tool role authority", () => {
             ),
           );
           expect(startChild).toHaveBeenCalledOnce();
-          expect(startChild.mock.calls[0]?.[1]).toBe(true);
           const childMessage = startChild.mock.calls[0]?.[0].params.message;
           expect(childMessage).toContain("inherited conversation is background context");
           expect(childMessage).toContain("Continue from the inherited reproduction");

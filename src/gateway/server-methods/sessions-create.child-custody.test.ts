@@ -505,7 +505,8 @@ describe("hosted creation transfers accepted child input", () => {
 
   it("keeps the agent-authored opening task out of command interpretation", async () => {
     await using fixture = await createHostedChildFixture();
-    await fixture.send();
+    const created = await fixture.send();
+    expect(created, JSON.stringify(created)).toMatchObject({ runStarted: true });
     await fixture.dispatchEntered;
     const [dispatch] = expectDefined(dispatchInboundMessageMock.mock.calls[0], "child dispatch");
     const { ctx } = dispatch as Parameters<typeof dispatchInboundMessage>[0];
@@ -517,6 +518,14 @@ describe("hosted creation transfers accepted child input", () => {
     expect(ctx.CommandSource).toBeUndefined();
     expect(String(ctx.Body)).toContain("/model command");
     await fixture.finish();
+    expect(fixture.provider, fixture.providerDiagnostics()).toHaveBeenCalledOnce();
+    expect(userMessages(fixture.scope())).toMatchObject([
+      {
+        message: {
+          content: "Continue independently and check whether a /model command changed it.",
+        },
+      },
+    ]);
   });
 
   it("does not publish a private source's child", async () => {

@@ -757,7 +757,7 @@ test.each(["archive", "stale-child"] as const)(
     const { entry: parent } = await createManagedProjectParent();
     const chatSendOwner = await import("./server-methods/chat-send-external-entry.js");
     const initialSend = vi
-      .spyOn(chatSendOwner, "handleDirectExternalChatSend")
+      .spyOn(chatSendOwner, "handleCreatedSessionChatSend")
       .mockImplementation(async ({ respond }) => {
         respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, "initial turn unavailable"));
       });

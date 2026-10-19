@@ -341,7 +341,7 @@ test("sessions.create persists explicit tool overrides before the first turn", a
     webSearch: false,
   };
   const observed: Array<unknown> = [];
-  const chatSend = vi.spyOn(chatSendOwner, "handleDirectExternalChatSend");
+  const chatSend = vi.spyOn(chatSendOwner, "handleCreatedSessionChatSend");
   chatSend.mockImplementation(async ({ respond }) => {
     observed.push(loadSessionEntry({ agentId: "main", sessionKey, storePath })?.toolOverrides);
     respond(true, { runId: "create-tool-overrides-run", status: "started" });
@@ -671,9 +671,9 @@ test("sessions.create replays an identical creation once and rejects conflicting
   await createSessionStoreDir();
   const { sessionCreateHandlers } = await import("./server-methods/sessions-create.js");
   let sharedContext:
-    | Parameters<typeof chatSendOwner.handleDirectExternalChatSend>[0]["context"]
+    | Parameters<typeof chatSendOwner.handleCreatedSessionChatSend>[0]["context"]
     | undefined;
-  const chatSend = vi.spyOn(chatSendOwner, "handleDirectExternalChatSend");
+  const chatSend = vi.spyOn(chatSendOwner, "handleCreatedSessionChatSend");
   chatSend.mockImplementation(async ({ context, respond }) => {
     sharedContext ??= context;
     respond(true, { runId: "create-once", status: "started" });

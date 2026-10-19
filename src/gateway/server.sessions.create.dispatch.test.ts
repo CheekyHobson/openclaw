@@ -442,7 +442,7 @@ test("sessions.create rejects stale mention spans before creating a selected-age
 test("sessions.create forwards an attachment-only first turn", async () => {
   await createSessionStoreDir();
   testState.agentsConfig = { entries: { main: {} } };
-  const chatSend = vi.spyOn(chatSendOwner, "handleDirectExternalChatSend");
+  const chatSend = vi.spyOn(chatSendOwner, "handleCreatedSessionChatSend");
   chatSend.mockImplementation(async ({ respond }) => {
     respond(true, { runId: "attachment-run", status: "started" });
   });

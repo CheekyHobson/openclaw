@@ -307,10 +307,10 @@ test.for([
     let initial: GatewayRequestHandlerOptions | undefined;
     const initialSettled = createDeferred();
     const hit = vi.fn();
-    const send = chatSendOwner.handleDirectExternalChatSend;
+    const send = chatSendOwner.handleCreatedSessionChatSend;
     const intercept = vi
-      .spyOn(chatSendOwner, "handleDirectExternalChatSend")
-      .mockImplementation(async (options) => {
+      .spyOn(chatSendOwner, "handleCreatedSessionChatSend")
+      .mockImplementation(async (options, spawned) => {
         if (options.params.sessionKey === key) {
           initial = options;
           if (fault === "before-input") {
@@ -319,7 +319,7 @@ test.for([
           }
         }
         try {
-          await send(options);
+          await send(options, spawned);
         } finally {
           if (options.params.sessionKey === key) {
             initialSettled.resolve();
@@ -473,14 +473,14 @@ test.for(["lost-worker-response", "restart-before-ack"] as const)(
     const message = "Recover this committed initial input exactly once.";
     const target = { agentId: "main", sessionKey: key, storePath };
     let initial: GatewayRequestHandlerOptions | undefined;
-    const send = chatSendOwner.handleDirectExternalChatSend;
+    const send = chatSendOwner.handleCreatedSessionChatSend;
     const intercept = vi
-      .spyOn(chatSendOwner, "handleDirectExternalChatSend")
-      .mockImplementation(async (options) => {
+      .spyOn(chatSendOwner, "handleCreatedSessionChatSend")
+      .mockImplementation(async (options, spawned) => {
         if (options.params.sessionKey === key) {
           initial = options;
         }
-        await send(options);
+        await send(options, spawned);
       });
     const hit = vi.fn();
     const stop = onSessionTranscriptUpdate((update) => {

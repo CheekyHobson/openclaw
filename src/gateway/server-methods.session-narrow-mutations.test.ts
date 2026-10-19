@@ -152,7 +152,12 @@ describe("invocation-owned session mutations", () => {
           setRuntimeConfigSnapshot(cfg);
           const entered = createDeferredCore();
           const release = createDeferredCore();
-          const dispatched = vi.spyOn(chat, "handleDirectExternalChatSend");
+          const dispatched = vi.spyOn(
+            chat,
+            method === "sessions.create"
+              ? "handleCreatedSessionChatSend"
+              : "handleDirectExternalChatSend",
+          );
           const owner =
             method === "sessions.send"
               ? sessionMessagingHandlers[method]!
@@ -377,7 +382,12 @@ describe("invocation-owned session mutations", () => {
           const context = createDirectChatContext({ getRuntimeConfig: () => cfg });
           const createdKey = "agent:main:main";
           const dispatch = vi
-            .spyOn(chat, "handleDirectExternalChatSend")
+            .spyOn(
+              chat,
+              method === "sessions.create"
+                ? "handleCreatedSessionChatSend"
+                : "handleDirectExternalChatSend",
+            )
             .mockImplementation(async (options) => {
               readGatewayRequestMutationAuthority(options).assertCurrent();
               options.sessionMutationAuthorization?.assertCurrent();
