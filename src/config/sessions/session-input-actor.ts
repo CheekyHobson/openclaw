@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { toErrorObject } from "@openclaw/normalization-core/error-coercion";
-import { SqliteWorkerError } from "../../infra/sqlite-worker-contract.js";
+import { wrapSqliteWorkerError } from "../../infra/sqlite-worker-contract.js";
 import type { UserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.types.js";
 import type { AgentDatabaseRequestExecutionSource } from "../../state/openclaw-agent-execution-admission-contract.js";
 import { captureOpenClawAgentDatabaseExecution } from "../../state/openclaw-agent-execution.js";
@@ -234,9 +234,7 @@ export function throwSessionInputActorFailure(
   authorityFailure?: unknown,
 ): never {
   if (outcome.kind === "unknown") {
-    const error = new SqliteWorkerError(outcome.error.message, "outcome-unknown");
-    error.cause = outcome.error.cause;
-    throw error;
+    throw wrapSqliteWorkerError(outcome.error.message, "outcome-unknown", outcome.error);
   }
   if (authorityFailure !== undefined) {
     throw toErrorObject(authorityFailure, "Input actor authority rejected the operation");

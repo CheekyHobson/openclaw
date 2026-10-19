@@ -817,6 +817,35 @@ it.each([
   });
 });
 
+it.each(["command", "flush"] as const)(
+  "preserves storage guidance when a phase %s has an unknown outcome",
+  async (stage) => {
+    await withActor(async ({ actor, fault, commands }) => {
+      await actor.read(authority);
+      fault.reply = "unknown-result";
+      fault.replyError = new Error("database or disk is full");
+      await expect(
+        actor.withPhase("turn", authority, async (phase) => {
+          if (stage === "command") {
+            await phase.actor.patch(activity("unknown", 456), authority);
+          } else {
+            phase.patch([{ kind: "activity", updatedAt: 456 }]);
+          }
+        }),
+      ).rejects.toSatisfy((error: unknown) => {
+        expect(
+          renderAssistantRequestFailureCopy({
+            storageFailure: classifyGatewayStorageFailure(error),
+          }),
+        ).toContain("disk is full. Free up space");
+        expect(formatErrorMessageWithCode(error)).toContain("database or disk is full");
+        return true;
+      });
+      expect(commands.filter((command) => command === "session.actor.patch")).toHaveLength(1);
+    });
+  },
+);
+
 it("release waits actual native settlement and flushes accepted phase work after an await", async () => {
   await withActor(async ({ actor, fault, commands }) => {
     const initial = await actor.read(authority);
