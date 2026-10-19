@@ -872,13 +872,7 @@ async function performPreparedGatewaySessionReset({
               sessionStartedAt: now,
               systemSent: false,
               abortedLastRun: false,
-              contextWindow: currentEntry?.contextWindow,
-              thinkingLevel: currentEntry?.thinkingLevel,
               fastMode: params.fastModeSelection?.value ?? currentEntry?.fastMode,
-              verboseLevel: currentEntry?.verboseLevel,
-              traceLevel: currentEntry?.traceLevel,
-              reasoningLevel: currentEntry?.reasoningLevel,
-              ttsAuto: currentEntry?.ttsAuto,
               execHost: params.execNode
                 ? "node"
                 : params.clearExecBinding
@@ -897,19 +891,13 @@ async function performPreparedGatewaySessionReset({
                     sessionDiffBaselineCapture: createSessionDiffBaselineCaptureClaim(),
                   }
                 : {}),
-              responseUsage: currentEntry?.responseUsage,
               ...preserveResetSessionPresentation(currentEntry),
               // Resets should keep the user's explicit selection, but clear any
               // temporary fallback model that was pinned during the previous run.
               ...resetPreservedSelection,
               groupActivation: currentEntry?.groupActivation,
               groupActivationNeedsSystemIntro: currentEntry?.groupActivationNeedsSystemIntro,
-              chatType: currentEntry?.chatType,
               compactionCount: 0,
-              queueMode: currentEntry?.queueMode,
-              queueDebounceMs: currentEntry?.queueDebounceMs,
-              queueCap: currentEntry?.queueCap,
-              queueDrop: currentEntry?.queueDrop,
               ...preserveSessionLineage(currentEntry),
               spawnedCwd: params.clearSpawnedCwd
                 ? undefined

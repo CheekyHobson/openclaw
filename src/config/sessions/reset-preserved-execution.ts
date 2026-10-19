@@ -1,8 +1,21 @@
 import type { SessionEntry } from "./types.js";
 
-/** A new incarnation retains the logical session's execution restrictions and placement. */
+/** A new incarnation retains the logical session's execution choices and placement. */
 export function preserveSessionExecutionContext(entry: SessionEntry | undefined) {
   return {
+    chatType: entry?.chatType,
+    contextWindow: entry?.contextWindow,
+    thinkingLevel: entry?.thinkingLevel,
+    fastMode: entry?.fastMode,
+    verboseLevel: entry?.verboseLevel,
+    traceLevel: entry?.traceLevel,
+    reasoningLevel: entry?.reasoningLevel,
+    ttsAuto: entry?.ttsAuto,
+    responseUsage: entry?.responseUsage,
+    queueMode: entry?.queueMode,
+    queueDebounceMs: entry?.queueDebounceMs,
+    queueCap: entry?.queueCap,
+    queueDrop: entry?.queueDrop,
     completionOwnerSessionKey: entry?.completionOwnerSessionKey,
     spawnedWorkspaceDir: entry?.spawnedWorkspaceDir,
     spawnedCwd: entry?.spawnedCwd,

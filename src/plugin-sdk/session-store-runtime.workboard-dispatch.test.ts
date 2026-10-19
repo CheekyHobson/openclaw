@@ -90,6 +90,8 @@ it.each([true, false])(
             pluginOwnerId: "workboard",
             modelOverride: "old-model",
             modelOverrideSource: "auto",
+            thinkingLevel: "low",
+            fastMode: false,
           },
         });
         await appendSessionTranscriptMessageByIdentity({
@@ -107,7 +109,12 @@ it.each([true, false])(
           expect(entry?.sessionId).not.toBe(sessionId);
           expect(entry?.lifecycleRevision).not.toBe("old-worker-revision");
           expect(entry?.modelOverride).toBeUndefined();
-          expect(entry).toMatchObject({ previousSessionId: sessionId, pluginOwnerId: "workboard" });
+          expect(entry).toMatchObject({
+            previousSessionId: sessionId,
+            pluginOwnerId: "workboard",
+            thinkingLevel: "low",
+            fastMode: false,
+          });
           return { runId: "fresh-worker-run", sessionKey };
         });
         const handlers = new Map<

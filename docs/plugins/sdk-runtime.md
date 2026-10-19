@@ -539,7 +539,7 @@ surfaces through normal database admission checks; Gateway shutdown cancels the 
 same entrypoint replaces an archived, automation-owned subagent session with a
 fresh incarnation under its canonical key. It returns whether replacement occurred
 and retains the previous transcript, usage lineage, inherited tool restrictions,
-peer messaging policy, explicit model/auth choices, execution permissions,
+peer messaging policy, explicit model/auth choices, execution preferences and permissions,
 workspace or device placement, visibility, and presentation choices. Explicit session members and public-share
 links are cleared for the new incarnation.
 Callers must own the synthetic key; this is not a restore operation for human
