@@ -99,7 +99,13 @@ export async function assertGatewayOwnerLeaseStopped(
   }
   const context = captureOpenClawStateReadWorkerContext({ env, path: pathname });
   const source = captureOpenClawStateReadSource();
-  const transport = source.createTransport({ type: "gatewayOwnerLease.read", schemaMaintenance });
+  // This preflight only awaits results; it never needs synchronous native servicing.
+  const transport = source.createTransport(
+    { type: "gatewayOwnerLease.read", schemaMaintenance },
+    undefined,
+    undefined,
+    true,
+  );
   const controller = new AbortController();
   const callerSignal = getAsyncWorkSignal();
   const signal = callerSignal

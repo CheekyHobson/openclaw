@@ -32,11 +32,14 @@ import * as ownerLeaseRead from "./gateway-owner-lease.read.js";
 import * as stateOwners from "./gateway-state-owner.js";
 import { acquireGatewayStateOwner, tryAcquireGatewayStateOwner } from "./gateway-state-owner.js";
 import { requireNodeSqlite } from "./node-sqlite.js";
+import { resolveRuntimeProcessEntrypointUrl } from "./runtime-process-url.js";
 import { readSqliteDatabaseCleanClose } from "./sqlite-database-admission.js";
 import { corruptSqliteIndexKey } from "./sqlite-index-corruption.test-support.js";
 import * as snapshotSource from "./sqlite-snapshot-source.js";
 import { runSqliteImmediateTransactionSync } from "./sqlite-transaction.js";
 import * as bootReader from "./update-managed-service-handoff-boot.js";
+import * as workerCpu from "./worker-cpu.js";
+import { closeDefaultRetainedNativeWorkerSource } from "./worker-native-lifecycle.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
@@ -589,6 +592,38 @@ describe("Gateway owner lease", () => {
       await Promise.all(locks.map((lock) => lock.release()));
     }
     expect(readGatewayOwnerLease({ env })).toBeUndefined();
+  });
+
+  it("acquires free existing state without polling or a synchronous worker supervisor", async () => {
+    let env: NodeJS.ProcessEnv;
+    {
+      await using owner = fixture();
+      env = owner.env;
+      seedOwner(env, { pid: 2_147_483_647 });
+    }
+    await closeOpenClawStateDatabaseAsync();
+    await closeDefaultRetainedNativeWorkerSource();
+    const workers = vi.spyOn(workerCpu, "createCpuTrackedWorker");
+    const sleep = vi.fn(async () => {
+      throw new Error("Free Gateway ownership must not wait for contention");
+    });
+    const lock = await acquireGatewayLock({
+      env,
+      allowInTests: true,
+      port: 19483,
+      listenerMode: "foreground",
+      timeoutMs: 0,
+      sleep,
+    });
+    try {
+      expect(lock).not.toBeNull();
+      expect(sleep).not.toHaveBeenCalled();
+      expect(readGatewayOwnerLease({ env })).toMatchObject({ pid: process.pid, state: "live" });
+      const supervisor = resolveRuntimeProcessEntrypointUrl("workerNativeLifecycle").href;
+      expect(workers.mock.calls.filter(([url]) => String(url) === supervisor)).toHaveLength(0);
+    } finally {
+      await lock?.release();
+    }
   });
 
   it("admits existing state without copying it and records the owner before listening", async () => {
