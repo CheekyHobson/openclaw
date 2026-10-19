@@ -1056,6 +1056,22 @@ differences and outside CPU load; do not compare unrelated absolute runs. Two
 large synthetic worktrees model file/index size and concurrent polling, not the
 production fleet's full filesystem working set or cold disk behavior.
 
+Add `--churn-ms 1000` to simulate an agent saving identical tracked `unchanged.txt`
+content and running `git status` on the polled checkout, while build output is
+created and removed below the ignored directory. This refreshes index stat data
+without changing the visible diff. Every unchanged RPC response must match its
+warmup hash. After measurement, the script makes a real tracked edit and checks
+that every tab receives the new line count, then restores that file. The report
+includes churn counts/timings, cache outcomes, and `editControlVerified`; phase
+samples retain diagnostic miss reasons when the revision supports them.
+
+For cache-reuse changes, compare both the 267,000-file fixture and a small
+fixture with `--tabs 3 --background 0 --maintenance 0 --agents 0 --poll-ms 250
+--churn-ms 1000 --duration-ms 30000`. Require unchanged response hashes, a passing
+edit control, fewer full diff reads, and a higher cache hit rate without a
+material paired latency regression. Native Git status used to validate a
+revision still counts as Git work; cache hits do not imply zero subprocesses.
+
 For a second scenario with independent revision checks, add
 `--poll-state-dir <other seeded fixture>` on each side. Both isolated Gateways
 then poll both existing synthetic worktrees concurrently, using a separate
