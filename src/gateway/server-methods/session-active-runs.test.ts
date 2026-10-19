@@ -359,11 +359,32 @@ it.each(["rpc", "native"] as const)(
 );
 
 it("keeps prebuilt active-run indexes in parity with per-row scans", async () => {
+  let seed = 1477;
+  const next = (bound: number) => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed % bound;
+  };
+  const sampled = Array.from({ length: 24 }, (_, index) => {
+    const agentId = next(3) === 0 ? "work" : "main";
+    return {
+      sessionKey: next(3) === 0 ? `bare-${index}` : `agent:${agentId}:sample-${index}`,
+      sessionId: `sample-session-${index}`,
+      agentId,
+      storeScope: next(3) === 0 ? `${storePath}-other` : storePath,
+      queued: next(3) === 0,
+      controlUiVisible: next(3) !== 0,
+      projectSessionActive: next(3) !== 0,
+    };
+  });
   rpcSourceTesting.reset(
     await activeSources([
       ["run-main", { sessionKey: "agent:main:main", sessionId: "session-main" }],
       ["run-global", { sessionKey: "global", agentId: "work" }],
       ["run-hidden", { sessionKey: "agent:main:hidden", projectSessionActive: false }],
+      ...sampled.map((metadata, index): [string, typeof metadata] => [
+        `sample-run-${index}`,
+        metadata,
+      ]),
     ]),
   );
   registerAgentRunContext("projected-key", {
@@ -376,7 +397,15 @@ it("keeps prebuilt active-run indexes in parity with per-row scans", async () =>
     sessionId: "session-projected",
   });
   try {
-    const project = createVisibleActiveSessionRunProjector();
+    const physicalPaths = vi.fn((locator: string) => [locator]);
+    const project = createVisibleActiveSessionRunProjector(
+      undefined,
+      undefined,
+      undefined,
+      physicalPaths,
+    );
+    // A changed-row publication must not prepare every other source's physical store.
+    expect(physicalPaths).not.toHaveBeenCalled();
     const cases = [
       { requestedKey: "agent:main:main", canonicalKey: "agent:main:main" },
       { requestedKey: "agent:main:projected", canonicalKey: "agent:main:projected" },
@@ -392,6 +421,18 @@ it("keeps prebuilt active-run indexes in parity with per-row scans", async () =>
         defaultAgentId: "main",
       },
       { requestedKey: "agent:main:missing", canonicalKey: "agent:main:missing" },
+      ...sampled.flatMap((source) =>
+        [storePath, `${storePath}-other`].flatMap((selectedStore) =>
+          ["main", "work"].map((agentId) => ({
+            storePath: selectedStore,
+            requestedKey: next(2) ? source.sessionKey : "agent:main:alias",
+            canonicalKey: source.sessionKey,
+            sessionId: next(2) ? source.sessionId : undefined,
+            agentId,
+            defaultAgentId: "main",
+          })),
+        ),
+      ),
     ];
     for (const activeCase of cases) {
       expect(project({ storePath, ...activeCase })).toEqual(

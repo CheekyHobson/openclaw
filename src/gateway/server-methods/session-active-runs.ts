@@ -67,28 +67,28 @@ function collectTrackedActiveSessionRuns(
 ): TrackedActiveSessionRun[] {
   const runs: TrackedActiveSessionRun[] = [];
   for (const [runId, ref] of captured ?? listRpcSourceEntries()) {
+    const identity = getRpcSourceIdentity(ref);
+    const sessionKey = identity.sessionKey.trim();
+    const sessionId = identity.sessionId.trim();
+    if (
+      selection &&
+      sessionKey !== selection.requestedKey &&
+      sessionKey !== selection.canonicalKey &&
+      (selection.sessionId === undefined || sessionId !== selection.sessionId)
+    ) {
+      continue;
+    }
     if (!matchesGateway(ref.input)) {
       continue;
     }
     const active = ref.adapter;
-    const identity = getRpcSourceIdentity(ref);
     const terminalPersistence =
       includeTerminalPersistence &&
       getRpcSourceProjectSessionActive(ref) === false &&
       active.projectSessionTerminalPending === true;
     const progress = resolveRpcSourceSessionProgressState(ref);
     if ((progress || terminalPersistence) && active.controlUiVisible !== false) {
-      const sessionKey = identity.sessionKey.trim();
-      const sessionId = identity.sessionId.trim();
       if (!sessionKey && !sessionId) {
-        continue;
-      }
-      if (
-        selection &&
-        sessionKey !== selection.requestedKey &&
-        sessionKey !== selection.canonicalKey &&
-        (selection.sessionId === undefined || sessionId !== selection.sessionId)
-      ) {
         continue;
       }
       runs.push({
@@ -206,8 +206,8 @@ export function hasTrackedActiveSessionRun(
 
 export function resolveVisibleActiveSessionRunState(
   params: VisibleActiveSessionRunSelection & {
-    trackedActiveRuns?: readonly TrackedActiveSessionRun[];
-    trackedRpcSourceRefs?: readonly RpcSourceRef[];
+    selectedRpcSources?: Iterable<readonly [string, RpcSourceRef]>;
+    trackedRpcSources?: readonly (readonly [string, RpcSourceRef])[];
     projectedAgentRunIndex?: ProjectedAgentRunIndex;
     includeTerminalPersistence?: boolean;
   },
@@ -245,19 +245,16 @@ export function resolveVisibleActiveSessionRunState(
           resolvedAgentId,
           params.defaultAgentId,
         )));
-  const matchingTrackedRuns = (
-    params.trackedActiveRuns ??
-    collectTrackedActiveSessionRuns(
-      params.includeTerminalPersistence,
-      {
-        requestedKey: params.requestedKey,
-        canonicalKey: params.canonicalKey,
-        sessionId,
-      },
-      undefined,
-      captureGatewayScopeMatcher(params.resolveGatewayContext),
-      params.physicalPaths,
-    )
+  const matchingTrackedRuns = collectTrackedActiveSessionRuns(
+    params.includeTerminalPersistence,
+    {
+      requestedKey: params.requestedKey,
+      canonicalKey: params.canonicalKey,
+      sessionId,
+    },
+    params.selectedRpcSources,
+    captureGatewayScopeMatcher(params.resolveGatewayContext),
+    params.physicalPaths,
   ).filter(matchesRequestedSession);
   const hasTerminalPersistence = matchingTrackedRuns.some((active) => active.terminalPersistence);
   const runIds = matchingTrackedRuns
@@ -335,7 +332,7 @@ export function resolveVisibleActiveSessionRunState(
   // liveness vote. Include hidden/queued refs in representation, not visibility.
   const representedLocally =
     localOperations.length > 0 &&
-    (params.trackedRpcSourceRefs ?? listRpcSourceEntries().map(([, ref]) => ref)).some((ref) => {
+    (params.trackedRpcSources ?? listRpcSourceEntries()).some(([, ref]) => {
       const operation = ref.input.claim?.operation;
       return operation !== undefined && localOperations.includes(operation);
     });
@@ -408,40 +405,25 @@ export function createVisibleActiveSessionRunProjector(
   const registrations = [...(captured ?? listRpcSourceEntries())].filter(([, ref]) =>
     matchesGateway(ref.input),
   );
-  const trackedRpcSourceRefs = registrations.map(([, ref]) => ref);
-  const byKey = new Map<string, TrackedActiveSessionRun[]>();
-  const byId = new Map<string, TrackedActiveSessionRun[]>();
-  const candidateKeys = new Set([
+  const byIdentity = new Map<string, (readonly [string, RpcSourceRef])[]>();
+  const candidates = new Set([
     ...projectedAgentRunIndex.ownerlessSessionKeys.keys(),
-    ...listActiveSessionRunKeys(),
-  ]);
-  const candidateIds = new Set([
     ...projectedAgentRunIndex.ownerlessSessionIds.keys(),
-    ...listActiveSessionRunIds(),
   ]);
-  for (const [source, candidates] of [
-    [projectedAgentRunIndex.sessionKeys, candidateKeys],
-    [projectedAgentRunIndex.sessionIds, candidateIds],
-  ] as const) {
+  for (const source of [projectedAgentRunIndex.sessionKeys, projectedAgentRunIndex.sessionIds]) {
     for (const identity of source.keys()) {
       candidates.add(identity.slice(identity.indexOf("\0") + 1));
     }
   }
-  for (const run of collectTrackedActiveSessionRuns(
-    false,
-    undefined,
-    registrations,
-    matchesGateway,
-    physicalPaths,
-  )) {
-    for (const [index, key] of [
-      [byKey, run.sessionKey],
-      [byId, run.sessionId],
-    ] as const) {
+  // Index identity only. A publication resolves progress and physical stores for
+  // its selected sessions, not every concurrently registered source.
+  for (const registration of registrations) {
+    const identity = getRpcSourceIdentity(registration[1]);
+    for (const key of [identity.sessionKey.trim(), identity.sessionId.trim()]) {
       if (key) {
-        const entries = index.get(key) ?? [];
-        entries.push(run);
-        index.set(key, entries);
+        const entries = byIdentity.get(key) ?? [];
+        entries.push(registration);
+        byIdentity.set(key, entries);
       }
     }
   }
@@ -449,12 +431,12 @@ export function createVisibleActiveSessionRunProjector(
     const sessionId = params.sessionId?.trim() ?? "";
     // Inventory excludes absent owners; positive matches retain canonical agent policy.
     if (
-      !byKey.has(params.canonicalKey) &&
-      !byKey.has(params.requestedKey) &&
-      !byId.has(sessionId) &&
-      !candidateKeys.has(params.canonicalKey) &&
-      !candidateKeys.has(params.requestedKey) &&
-      !candidateIds.has(sessionId) &&
+      !byIdentity.has(params.canonicalKey) &&
+      !byIdentity.has(params.requestedKey) &&
+      !byIdentity.has(sessionId) &&
+      !candidates.has(params.canonicalKey) &&
+      !candidates.has(params.requestedKey) &&
+      !candidates.has(sessionId) &&
       (!sessionId || resolveReplyRunForCurrentSessionId(sessionId).kind === "none") &&
       !getLatestLiveSubagentRunByChildSessionKey(
         params.canonicalKey,
@@ -468,23 +450,21 @@ export function createVisibleActiveSessionRunProjector(
       resolveGatewayContext,
       physicalPaths,
       projectedAgentRunIndex,
-      trackedRpcSourceRefs,
-      trackedActiveRuns: [
-        ...new Set([
-          ...(byKey.get(params.canonicalKey) ?? []),
-          ...(byKey.get(params.requestedKey) ?? []),
-          ...(byId.get(sessionId) ?? []),
-        ]),
-      ],
+      trackedRpcSources: registrations,
+      selectedRpcSources: new Set([
+        ...(byIdentity.get(params.canonicalKey) ?? []),
+        ...(byIdentity.get(params.requestedKey) ?? []),
+        ...(byIdentity.get(sessionId) ?? []),
+      ]),
     });
   };
   const candidateSessionIdsOrKeys = (): ReadonlySet<string> =>
     new Set(
       [
-        ...candidateKeys,
-        ...candidateIds,
-        ...byKey.keys(),
-        ...byId.keys(),
+        ...candidates,
+        ...listActiveSessionRunKeys(),
+        ...listActiveSessionRunIds(),
+        ...byIdentity.keys(),
         ...listActiveSubagentSessionKeys(),
       ].filter((identity) => identity.length > 0),
     );

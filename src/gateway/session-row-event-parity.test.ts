@@ -12,6 +12,7 @@ import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { createGatewayConnectionState } from "./server-connection-state.js";
 import { createActiveRpcSourceForTest } from "./server-methods/rpc-source-fixtures.test-support.js";
 import { createVisibleActiveSessionRunProjector } from "./server-methods/session-active-runs.js";
+import * as activeRuns from "./server-methods/session-active-runs.js";
 import {
   initializeSessionReadContext,
   listSessions,
@@ -167,7 +168,25 @@ it("delivers nested event rows identical to the full list for each viewer and cl
           label: null,
         };
         const presentations = vi.spyOn(projection, "present");
+        const projectedRuns = vi.fn();
+        const createProjector = activeRuns.createVisibleActiveSessionRunProjector;
+        const projector = vi
+          .spyOn(activeRuns, "createVisibleActiveSessionRunProjector")
+          .mockImplementation((...args) => {
+            const project = createProjector(...args);
+            return Object.assign(
+              (selection: Parameters<typeof project>[0]) => {
+                projectedRuns(selection.canonicalKey);
+                return project(selection);
+              },
+              { candidateSessionIdsOrKeys: project.candidateSessionIdsOrKeys },
+            );
+          });
         connection.broadcast(event, source);
+        projector.mockRestore();
+        expect(projectedRuns.mock.calls.filter(([selectedKey]) => selectedKey === key)).toEqual([
+          [key],
+        ]);
         // Three independently authorized recipients need only the owner and viewer rows.
         expect(presentations.mock.calls.length).toBeLessThanOrEqual(2);
         presentations.mockRestore();

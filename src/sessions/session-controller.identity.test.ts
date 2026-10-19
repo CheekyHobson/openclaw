@@ -5,6 +5,7 @@ import { withSessionTurn } from "./session-controller.admission.js";
 import { ReplyRunAlreadyActiveError } from "./session-controller.contracts.js";
 import {
   getSessionControllerSourceIdentity,
+  hasSessionControllerIdentity,
   resolveReplyRunForCurrentSessionId,
 } from "./session-controller.identity.js";
 import {
@@ -95,6 +96,7 @@ it("treats equal active identities in two stores as busy and mutates only the se
   expect(ownerA).toBeDefined();
   expect(ownerB).toBeDefined();
   expect(ownerA).not.toBe(ownerB);
+  ownerA!.updateSessionId("rotated-a");
   using warning = vi.spyOn(diagnosticLogger, "warn").mockImplementation(() => undefined);
   expect(resolveReplyRunForCurrentSessionId("incarnation")).toEqual({
     kind: "ambiguous",
@@ -590,4 +592,85 @@ it("rotates incarnation aliases while retaining exact late-writer lineage", asyn
       ).toBe(owner);
     },
   );
+});
+
+it("resolves identities without inspecting unrelated active turns", () => {
+  const operations = Array.from({ length: 16 }, (_, index) =>
+    createReplyOperation({
+      sessionKey: `${key}:indexed:${index}`,
+      sessionId: `indexed-${index}`,
+      resetTriggered: false,
+    }),
+  );
+  const unrelated = operations
+    .slice(1)
+    .map((operation) => vi.spyOn(operation, "hasOwnedSessionId"));
+  try {
+    expect(resolveReplyRunForCurrentSessionId("indexed-0")).toEqual({
+      kind: "one",
+      operation: operations[0],
+    });
+    expect(resolveReplyRunForCurrentSessionId("missing-indexed-id")).toEqual({ kind: "none" });
+    for (const inspection of unrelated) {
+      expect(inspection).not.toHaveBeenCalled();
+    }
+  } finally {
+    for (const operation of operations) {
+      operation.complete();
+    }
+  }
+});
+
+it("matches registry projection through randomized rotation, rekey, and settlement", () => {
+  using warning = vi.spyOn(diagnosticLogger, "warn").mockImplementation(() => undefined);
+  let seed = 1477;
+  const next = (bound: number) => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed % bound;
+  };
+  const operations = Array.from({ length: 12 }, (_, index) =>
+    createReplyOperation({
+      sessionKey: `${key}:random:${index}`,
+      sessionId: `random-${index}`,
+      resetTriggered: false,
+    }),
+  );
+  const identities = Array.from({ length: 12 }, (_, index) => `random-${index}`);
+  try {
+    operations[0]!.updateSessionId("random-1");
+    operations[0]!.updateSessionKey(`${key}:random:adopted:initial`);
+    for (let step = 0; step < 48; step++) {
+      const operation = operations[next(operations.length)]!;
+      if (!operation.result) {
+        if (step % 3 === 0) {
+          operation.updateSessionId(identities[next(identities.length)]!);
+        } else if (step % 3 === 1) {
+          operation.updateSessionKey(`${key}:random:adopted:${step}`);
+        } else {
+          operation.complete();
+        }
+      }
+      for (const id of identities) {
+        const entries = [...sessionControllers.values()];
+        const matches = entries.flatMap((entry) =>
+          entry.active?.hasOwnedSessionId(id) ? [entry.active] : [],
+        );
+        const expected =
+          matches.length === 0
+            ? { kind: "none" }
+            : matches.length === 1
+              ? { kind: "one", operation: matches[0] }
+              : { kind: "ambiguous", operations: matches };
+        expect(resolveReplyRunForCurrentSessionId(id)).toEqual(expected);
+        expect(hasSessionControllerIdentity(id)).toBe(
+          entries.some((entry) => entry.aliases.has(id) || entry.active?.hasOwnedSessionId(id)),
+        );
+      }
+    }
+    expect(warning).toHaveBeenCalled();
+  } finally {
+    for (const operation of operations) {
+      operation.complete();
+    }
+  }
 });

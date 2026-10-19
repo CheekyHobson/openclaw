@@ -110,7 +110,9 @@ export function adoptReplyOperationController(
     }
   }
   owner.active = operation;
-  addSessionControllerEntryAlias(owner, operation.sessionId);
+  for (const sessionId of operation.captureOwnedSessionIds()) {
+    addSessionControllerEntryAlias(owner, sessionId);
+  }
   controllerEntryByOperation.set(operation, owner);
   retainSessionControllerOperation(operation);
   if (mailboxClaim) {

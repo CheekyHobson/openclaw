@@ -131,7 +131,24 @@ export function prepareSessionEventProjection(
     let revision = projection.state.revision;
     let accessRevision = readGatewayAccessRevision();
     // Run display facts belong to this synchronous publication; recipient authority stays live.
-    const runProjector = connection.createRunProjector();
+    const projectRun = connection.createRunProjector();
+    const runStates = new Map<string, ReturnType<typeof projectRun>>();
+    const runProjector: typeof projectRun = (selection) => {
+      const key = JSON.stringify([
+        selection.storePath,
+        selection.requestedKey,
+        selection.canonicalKey,
+        selection.sessionId,
+        selection.agentId,
+        selection.defaultAgentId,
+      ]);
+      let state = runStates.get(key);
+      if (!state) {
+        state = projectRun(selection);
+        runStates.set(key, state);
+      }
+      return state;
+    };
     return (client) => {
       // Check before audience payload/encoding caches: equal sharing scopes do not imply equal UI.
       if (prepared?.controlUiOnly && client.connect.client.id !== GATEWAY_CLIENT_IDS.CONTROL_UI) {

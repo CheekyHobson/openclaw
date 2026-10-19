@@ -56,12 +56,7 @@ export type ReplyRunIdentityResolution =
 
 export function hasSessionControllerIdentity(sessionId: string): boolean {
   const id = normalizeOptionalString(sessionId);
-  return Boolean(
-    id &&
-    [...controllerStorage.sessionControllers.values()].some(
-      (entry) => entry.aliases.has(id) || entry.active?.hasOwnedSessionId(id) === true,
-    ),
-  );
+  return Boolean(id && controllerStorage.sessionControllerEntriesByAlias.has(id));
 }
 
 /** Session IDs can overlap across stores or reused incarnations. Key lookup can
@@ -72,7 +67,7 @@ export function resolveReplyRunForCurrentSessionId(sessionId: string): ReplyRunI
   if (!id) {
     return { kind: "none" };
   }
-  const matches = [...controllerStorage.sessionControllers.values()].filter(
+  let matches = [...(controllerStorage.sessionControllerEntriesByAlias.get(id) ?? [])].filter(
     (entry) => entry.active?.hasOwnedSessionId(id) === true,
   );
   if (matches.length === 0) {
@@ -81,6 +76,11 @@ export function resolveReplyRunForCurrentSessionId(sessionId: string): ReplyRunI
   if (matches.length === 1) {
     return { kind: "one", operation: matches[0]!.active! };
   }
+  // Alias refresh changes Set order; ambiguous results retain controller registration order.
+  const candidates = new Set(matches);
+  matches = [...controllerStorage.sessionControllers.values()].filter((entry) =>
+    candidates.has(entry),
+  );
   diag.warn(
     `ambiguous session controller identity: sessionId=${id} entryIds=${matches
       .map((entry) => entry.id)
