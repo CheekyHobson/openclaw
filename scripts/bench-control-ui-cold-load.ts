@@ -651,6 +651,10 @@ try {
         fixture.events.length,
         { timeout: 30_000 },
       );
+      const chatErrors = await page.locator(".chat-history-error, .chat-error").allTextContents();
+      if (chatErrors.length) {
+        throw new Error(`Cold-load conversation failed: ${chatErrors.join("; ")}`);
+      }
     } catch (error) {
       const diagnostics = await page.evaluate(() => Reflect.get(window, "__coldLoad")?.read());
       await writeFile(

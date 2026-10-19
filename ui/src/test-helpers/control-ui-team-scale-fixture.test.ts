@@ -4,12 +4,26 @@ import { CronJobSchema } from "../../../packages/gateway-protocol/src/schema/cro
 import { GatewaySessionRowEvents } from "../api/gateway-session-row-events.ts";
 import type { GatewaySessionRow } from "../api/types.ts";
 import { canApplySessionListSnapshot } from "../lib/sessions/session-list-query.ts";
+import { requestChatSessionSnapshot } from "../pages/chat/chat-history-request.ts";
 import { createTeamScaleSidebarListOwner } from "./control-ui-sidebar-list-fixture.ts";
 import { createControlUiTeamScaleFixture } from "./control-ui-team-scale-fixture.ts";
+import { createTestGatewayClient } from "./gateway-client.ts";
 
 const now = 1_800_000_000_000;
 
 describe("Team-scale Gateway fixture", () => {
+  it("serves a warm delta the transcript owner can accept without cached metadata", async () => {
+    const fixture = createControlUiTeamScaleFixture({ now, warmHistoryDelta: true });
+    const client = createTestGatewayClient(async () => fixture.warmHistoryDelta);
+    await expect(
+      requestChatSessionSnapshot(client, fixture.selectedSessionKey, {}, () => true, "warm"),
+    ).resolves.toMatchObject({
+      kind: "delta",
+      messages: [],
+      sessionInfo: { key: fixture.selectedSessionKey },
+    });
+  });
+
   it("sustains certified ancestor churn past the minute fallback and preserves the raw delta baseline", () => {
     const fixture = createControlUiTeamScaleFixture({
       now,

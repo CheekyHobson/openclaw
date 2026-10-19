@@ -623,6 +623,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
           kind: "delta",
           messages: [],
           sessionId: pinnedRows[0]!.sessionId,
+          sessionInfo: pinnedRows[0]!,
           deltaCursor: "team-scale-warm-cursor",
           metadata: { models: [] },
         }
