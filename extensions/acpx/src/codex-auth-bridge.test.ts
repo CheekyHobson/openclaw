@@ -314,6 +314,20 @@ describe("prepareAcpxCodexAuthConfig", () => {
     await expect(fs.access(authPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("keeps a native Codex API-key login once no key is granted", async () => {
+    const { authPath, run, writeAuth } = await adapterFixture();
+    // Shape written by `codex login --with-api-key` (codex-rs login_with_api_key).
+    const nativeLogin = { auth_mode: "apikey", OPENAI_API_KEY: "sk-native-login" };
+    await writeAuth(nativeLogin);
+    const env = { ...process.env };
+    delete env.CODEX_API_KEY;
+    delete env.OPENAI_API_KEY;
+
+    await run(env);
+
+    expect(JSON.parse(await fs.readFile(authPath, "utf8"))).toEqual(nativeLogin);
+  });
+
   it("does not copy source Codex auth", async () => {
     const { root, generated, prepare, sourceConfig } = createWrapperFixture();
     const agentDir = path.join(root, "agent");

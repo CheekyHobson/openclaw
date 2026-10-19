@@ -110,16 +110,19 @@ let wrapperOwnsCodexAuth = !existsSync(codexAuthPath);
 if (!wrapperOwnsCodexAuth) {
   try {
     const existingCodexAuth = JSON.parse(readFileSync(codexAuthPath, "utf8"));
+    // The wrapper writes API-key auth without auth_mode; Codex's own logins
+    // (codex login, codex login --with-api-key) always record auth_mode.
     wrapperOwnsCodexAuth =
       !existingCodexAuth ||
       typeof existingCodexAuth !== "object" ||
-      typeof existingCodexAuth.OPENAI_API_KEY === "string";
+      (typeof existingCodexAuth.OPENAI_API_KEY === "string" &&
+        existingCodexAuth.auth_mode === undefined);
   } catch {
     wrapperOwnsCodexAuth = true;
   }
 }
-// API-key auth here is only ever seeded by this wrapper. Without a granted key,
-// drop it so a key once inherited from the Gateway does not outlive the grant.
+// Without a granted key, drop wrapper-seeded auth so a key once inherited from
+// the Gateway does not outlive the grant. Native Codex logins are left alone.
 if (!codexApiKey && wrapperOwnsCodexAuth) {
   rmSync(codexAuthPath, { force: true });
 }

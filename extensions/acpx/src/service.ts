@@ -161,7 +161,7 @@ async function measureAcpxStartup<T>(
  * Name (never echo) provider credentials a setup may have relied on reaching
  * harnesses implicitly.
  */
-export function formatUninheritedHarnessCredentialWarning(
+function formatUninheritedHarnessCredentialWarning(
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
   const names = listKnownProviderAuthEnvVarNames()

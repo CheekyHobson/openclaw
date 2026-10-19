@@ -104,10 +104,7 @@ import {
   openAcpxProcessLeaseStateStore,
   type AcpxProcessLease,
 } from "./process-lease.js";
-import {
-  createAcpxRuntimeService as createRealAcpxRuntimeService,
-  formatUninheritedHarnessCredentialWarning,
-} from "./service.js";
+import { createAcpxRuntimeService as createRealAcpxRuntimeService } from "./service.js";
 import {
   ACPX_GATEWAY_INSTANCE_KEY,
   ACPX_GATEWAY_INSTANCE_MAX_ENTRIES,
@@ -722,20 +719,19 @@ it("catalog-only acquisition and disposal preserve another active runtime lease"
   await owner.stop?.(ctx);
 });
 
-describe("formatUninheritedHarnessCredentialWarning", () => {
-  it("names Gateway credentials that ACP harnesses no longer inherit without echoing values", () => {
-    const warning = formatUninheritedHarnessCredentialWarning({
-      OPENAI_API_KEY: "synthetic-openai-value",
-      PATH: "/usr/bin",
-    });
-    expect(warning).toContain("OPENAI_API_KEY");
-    expect(warning).not.toContain("synthetic-openai-value");
-    expect(warning).not.toContain("PATH");
+it("startup names uninherited Gateway credentials without echoing their values", async () => {
+  vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-value");
+  const ctx = createServiceContext(testWorkspace.dir);
+  const service = createAcpxRuntimeService(ctx, {
+    probeAtStartup: false,
+    runtimeFactory: () => createRuntimeWithoutProcesses(),
   });
-
-  it("stays quiet when no known provider credential is set", () => {
-    expect(
-      formatUninheritedHarnessCredentialWarning({ PATH: "/usr/bin", OPENAI_API_KEY: " " }),
-    ).toBe(undefined);
-  });
+  await service.start(ctx);
+  const warnings = vi.mocked(ctx.logger.warn).mock.calls.map(([message]) => message);
+  const warning = warnings.find((message) =>
+    message.includes("do not inherit Gateway credentials"),
+  );
+  expect(warning).toContain("OPENAI_API_KEY");
+  expect(warnings.join("\n")).not.toContain("synthetic-openai-value");
+  await service.stop?.(ctx);
 });

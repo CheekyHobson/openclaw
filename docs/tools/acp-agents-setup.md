@@ -161,7 +161,13 @@ Give a harness a credential in one of two ways:
 
 - **Its own login.** Sign in on the Gateway host, for example `claude login` or
   `opencode auth login`. Logins stored under the Gateway user's home keep
-  working.
+  working. Codex is the exception: OpenClaw runs it with an isolated home at
+  `<state dir>/acpx/codex-home` (by default `~/.openclaw/acpx/codex-home`) and
+  does not copy `~/.codex/auth.json`, so a normal `codex login` does not reach
+  it. Sign in to that home instead with the Codex CLI:
+  `CODEX_HOME=~/.openclaw/acpx/codex-home codex login`, or
+  `codex login --with-api-key` with the same `CODEX_HOME`. Do not also set
+  `ACPX_AUTH_API_KEY`: it selects the environment-key sign-in method.
 - **An explicit grant.** Set `ACPX_AUTH_<NAME>` in the Gateway's environment.
   Harnesses then receive `<NAME>`, and acpx answers an ACP auth method whose id
   normalizes to `<NAME>`. For example, `ACPX_AUTH_OPENROUTER_API_KEY` gives
