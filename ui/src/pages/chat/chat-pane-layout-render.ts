@@ -295,7 +295,9 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
       };
     }
     const desktopFocus = this.desktopFocus;
+    sessionWorkspace.onScrollPortRef = this.mobileScrollFades.register;
     const panelDefinitions = sidebarPanelDefinitions({
+      onScrollPortRef: this.mobileScrollFades.register,
       paneId: this.paneId,
       panePresentationId: this.presentationId,
       subagentsInputRegion: this.inputRegion,
@@ -450,6 +452,7 @@ export abstract class ChatPaneLayoutRender extends ChatPaneBrowserAnnotationRend
           };
     const avatar = resolveAssistantDisplayAvatar(chatProps);
     const region = renderSidebarRegion({
+      mobileScrollFades: this.mobileScrollFades,
       onRegionElementRef: (element) => {
         this.sidebarRegionElement = element;
         const release = this.registerDetailsElement("pane", element);

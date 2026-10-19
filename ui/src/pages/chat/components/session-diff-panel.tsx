@@ -694,6 +694,7 @@ export const SessionDiffPanel = defineSolidBridge<SessionDiffProps>(
       onResult: { default: null, attribute: false },
       openFileView: { default: null, attribute: false },
       onOpenMobilePage: { default: null, attribute: false },
+      onScrollPortRef: { default: undefined, attribute: false },
     },
   },
 );

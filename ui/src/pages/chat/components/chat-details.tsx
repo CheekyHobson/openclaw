@@ -11,6 +11,7 @@ import {
 } from "solid-js";
 import { Icon } from "../../../components/solid/icon.tsx";
 import type { MenuHandle } from "../../../components/solid/menu.tsx";
+import { elementRef } from "../../../lib/reactive/element-ref.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { listen } from "../../../lib/reactive/listener.ts";
 import { createResizeObserver } from "../../../lib/reactive/observers.ts";
@@ -352,7 +353,7 @@ export const ChatDetails = defineSolidBridge<Props, Methods>(
         </button>
         <Portal mount={surface}>
           <div
-            ref={(element) => (panel = element)}
+            ref={[(element) => (panel = element), elementRef(props.props?.onScrollPortRef)]}
             class="chat-details"
             id={panelId}
             popover="manual"

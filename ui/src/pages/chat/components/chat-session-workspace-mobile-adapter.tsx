@@ -253,6 +253,7 @@ export function MobileWorkspaceContents(props: { workspace: SessionWorkspaceProp
       onToggleGroup={(kind) => props.workspace.onToggleMobileGroup?.(kind)}
       onSearchFocus={() => props.workspace.onSearchFocus?.()}
       onScrollElement={onScrollElement}
+      onScrollPortRef={props.workspace.onScrollPortRef}
       onScroll={onScroll}
     />
   );
