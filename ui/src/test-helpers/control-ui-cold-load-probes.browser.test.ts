@@ -2,6 +2,43 @@ import { describe, expect, it } from "vitest";
 import { createColdLoadProbeInitScript } from "./control-ui-cold-load-probes.ts";
 
 describe("serialized cold-load probes", () => {
+  it("distinguishes a scheduled reply from main-thread delivery delay", () => {
+    const iframe = document.createElement("iframe");
+    document.body.append(iframe);
+    try {
+      const target = iframe.contentWindow;
+      const doc = iframe.contentDocument;
+      if (!target || !doc) {
+        throw new Error("Probe realm was not created");
+      }
+      const script = doc.createElement("script");
+      script.textContent = `
+        let clock = 320;
+        Object.defineProperty(performance, "now", { value: () => clock });
+        let deliver;
+        window.setTimeout = callback => { deliver = callback; return 1; };
+        window.WebSocket = class extends EventTarget { send() {} };
+        ${createColdLoadProbeInitScript({ ownerProbes: false, latencyMs: 20, methodLatencyMs: { connect: 90 }, frameGapMs: 0, events: [] })}
+        const socket = new WebSocket();
+        socket.send(JSON.stringify({type: "req", id: "hello", method: "connect"}));
+        socket.dispatchEvent(new MessageEvent("message", {data: JSON.stringify({type: "res", id: "hello", ok: true})}));
+        clock = 620;
+        deliver();
+        window.deliveryProof = __coldLoad.read().rpcs[0];
+      `;
+      doc.body.append(script);
+      expect(Reflect.get(target, "deliveryProof")).toMatchObject({
+        method: "connect",
+        requestedAtMs: 320,
+        scheduledAtMs: 410,
+        receivedAtMs: 620,
+        ms: 300,
+      });
+    } finally {
+      iframe.remove();
+    }
+  });
+
   it("retires closed-socket requests without losing their RPC count or another socket's work", () => {
     const iframe = document.createElement("iframe");
     document.body.append(iframe);

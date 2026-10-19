@@ -19,6 +19,9 @@ function installColdLoadProbes(
     requestBytes: number;
     responseBytes: number;
     ms: number;
+    requestedAtMs?: number;
+    scheduledAtMs?: number;
+    receivedAtMs?: number;
     dispatchMs?: number;
     responseAtMs?: number;
     abandoned?: true;
@@ -393,6 +396,9 @@ function installColdLoadProbes(
                 requestBytes: request.bytes,
                 responseBytes,
                 ms: performance.now() - request.at,
+                requestedAtMs: request.at,
+                scheduledAtMs: deliverAt,
+                receivedAtMs: performance.now(),
                 ...(liveStartedAt ? { responseAtMs: performance.now() - liveStartedAt } : {}),
               });
             }
