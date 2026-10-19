@@ -81,6 +81,7 @@ describe("prepareEmbeddedAttemptBundleTools", () => {
         cronCreatorToolAllowlistCaptureRef: {},
         effectiveToolsAllow: undefined,
         inheritedToolAllowlist,
+        additionalInheritedToolNamesRef: [],
         localModelLeanPreserveToolNames: [],
         runtimeCapabilityProfile: resolveConversationCapabilityProfile({}),
         toolsEnabled: true,
@@ -335,9 +336,7 @@ describe("prepareEmbeddedAttemptBundleTools", () => {
     async ({ runtime, publicationAllowed }) => {
       const inherited = ["sessions_spawn", "github_publish"];
       const input = createInput(inherited, [createStubTool("sessions_spawn")]);
-      input.preparedToolBase.inheritedPublicationToolRef = {
-        current: createStubTool("github_publish"),
-      };
+      input.preparedToolBase.additionalInheritedToolNamesRef = ["github_publish"];
       input.preparedToolBase.effectiveToolsAllow = runtime;
       mocks.acquireSessionMcpRuntime.mockResolvedValue({ runtime: {}, releaseLease: vi.fn() });
       mocks.materializeBundleMcpToolsForRun.mockResolvedValue({
@@ -356,7 +355,7 @@ describe("prepareEmbeddedAttemptBundleTools", () => {
         ),
       ).not.toContain("github_publish");
 
-      input.preparedToolBase.inheritedPublicationToolRef.current = undefined;
+      input.preparedToolBase.additionalInheritedToolNamesRef.length = 0;
       result.refreshTools(() => {});
       expect(inherited).not.toContain("github_publish");
     },

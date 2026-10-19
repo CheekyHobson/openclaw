@@ -12,9 +12,7 @@ import { resolveGatewayMessageChannel } from "../utils/message-channel.js";
 import { resolveSessionAgentId } from "./agent-scope.js";
 import {
   bindAssembledAgentToolActionDescriptor,
-  bindChildOnlyPublicationTool,
   copyAgentToolMetadata,
-  isChildOnlyPublicationTool,
 } from "./agent-tool-metadata.js";
 import { createCodingToolsGatewayCaller } from "./agent-tools.caller.js";
 import { finalizeAgentTools } from "./agent-tools.finalize.js";
@@ -93,7 +91,7 @@ import {
   TOOL_SEARCH_RAW_TOOL_NAME,
 } from "./tool-search.js";
 import { replaceWithEffectiveCronCreatorToolAllowlist } from "./tools/cron-tool.js";
-import { createGitHubPublishTool } from "./tools/github-publish-tool.js";
+import { githubPublishToolDefinition } from "./tools/github-publish-tool.js";
 import { prepareSessionPortalToolAccess } from "./tools/session-portal-target.js";
 
 export { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
@@ -357,14 +355,6 @@ function* assembleOpenClawCodingTools(
   const inheritedToolAllowlist = options?.inheritedToolAllowlistRef ?? [];
   const shouldInheritEffectiveToolAllowlist =
     capabilityProfile.policy.inheritancePolicies.some(hasRestrictiveAllowPolicy);
-  // A new managed child has its own publication workspace. Run the real tool
-  // through all parent policies before capturing it, without exposing it here.
-  const inheritedPublicationCandidate =
-    (shouldInheritEffectiveToolAllowlist || options?.inheritedPublicationToolRef) &&
-    includeOpenClawTools &&
-    options?.githubPublicationAvailable === false
-      ? bindChildOnlyPublicationTool(createGitHubPublishTool())
-      : undefined;
   const cronCreatorToolAllowlist = options?.cronCreatorToolAllowlistRef ?? [];
   const gatewayCaller = resolveScheduledToolCallerContext({
     scheduledToolPolicy: options?.scheduledToolPolicy,
@@ -517,9 +507,6 @@ function* assembleOpenClawCodingTools(
   const tools = preparedTools
     ? [...new Map([...assembledTools, ...preparedTools].map((tool) => [tool.name, tool])).values()]
     : assembledTools;
-  if (inheritedPublicationCandidate) {
-    tools.push(inheritedPublicationCandidate);
-  }
   const swarmStructuredOutputTool =
     options?.swarmCollector && options.swarmOutputSchema
       ? tools.find((tool) => tool.name === "structured_output")
@@ -578,17 +565,30 @@ function* assembleOpenClawCodingTools(
       structuredOutputTool: swarmStructuredOutputTool,
     },
   );
-  const inheritableTools = applyGatewayToolPolicy(grantedTools, options?.config);
-  const authorizedTools = inheritableTools.filter((tool) => !isChildOnlyPublicationTool(tool));
-  if (options?.inheritedPublicationToolRef) {
-    options.inheritedPublicationToolRef.current = inheritableTools.find(isChildOnlyPublicationTool);
+  const authorizedTools = applyGatewayToolPolicy(grantedTools, options?.config);
+  // Workspace availability belongs to the child. Evaluate delegation against
+  // the parent's policy without constructing a tool the parent cannot use.
+  const extraNames = options?.additionalInheritedToolNamesRef ?? [];
+  extraNames.length = 0;
+  if (
+    (shouldInheritEffectiveToolAllowlist || options?.additionalInheritedToolNamesRef) &&
+    includeOpenClawTools &&
+    !isMemoryFlushRun &&
+    options?.githubPublicationAvailable === false
+  ) {
+    const permitted = filterToolsByMessageProvider(
+      [githubPublishToolDefinition],
+      options?.toolPolicyMessageProvider ?? options?.messageProvider,
+    ).filter(({ name }) => isConversationToolAllowed(capabilityProfile, name));
+    extraNames.push(...applyGatewayToolPolicy(permitted, options?.config).map((tool) => tool.name));
   }
   assertMemoryFlushPersistenceToolAvailable(authorizedTools, options?.memoryFlushTools);
   authorizedTools.forEach(bindAssembledAgentToolActionDescriptor);
   if (shouldInheritEffectiveToolAllowlist) {
     // Snapshot exporter only: this copies policy-approved tools for descendants and
     // never filters the mandatory structured_output tool from this turn.
-    replaceWithEffectiveToolAllowlist(inheritedToolAllowlist, inheritableTools);
+    const inheritable = [...authorizedTools, ...extraNames.map((name) => ({ name }))];
+    replaceWithEffectiveToolAllowlist(inheritedToolAllowlist, inheritable);
   }
   replaceWithEffectiveCronCreatorToolAllowlist(cronCreatorToolAllowlist, authorizedTools, (tool) =>
     getPluginToolMeta(tool),

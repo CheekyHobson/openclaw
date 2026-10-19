@@ -26,6 +26,20 @@ import { callInProcessGatewayTool, type InProcessGatewayCaller } from "./in-proc
 const publicationOperatorActions = GitHubPublicationActionSchema.properties.action.anyOf.map(
   (action) => action.const,
 );
+const publicationWorkspaceActions = ["publish", "refresh_base"];
+
+export const githubPublishToolDefinition = {
+  name: "github_publish",
+  parameters: Type.Object(
+    {
+      ...GitHubBaseRefreshSchema.properties,
+      action: Type.Optional(stringEnum(publicationWorkspaceActions)),
+      title: Type.Optional(GitHubPublicationTitleSchema),
+      body: Type.Optional(GitHubPublicationBodySchema),
+    },
+    { additionalProperties: false },
+  ),
+};
 
 function describeGitHubPublishTool(
   automationsAvailable: boolean,
@@ -56,29 +70,21 @@ export function createGitHubPublishTool(
   const actionsAvailable = options.actionsAvailable === true;
   const tool: AnyAgentTool = {
     label: "GitHub Publish",
-    name: "github_publish",
+    name: githubPublishToolDefinition.name,
     description: describeGitHubPublishTool(false, publicationAvailable, actionsAvailable),
     parameters: publicationAvailable
-      ? Type.Object(
-          {
-            ...(actionsAvailable
-              ? {
-                  ...GitHubPublicationActionSchema.properties,
-                }
-              : {}),
-            ...GitHubBaseRefreshSchema.properties,
-            action: Type.Optional(
-              stringEnum([
-                "publish",
-                "refresh_base",
-                ...(actionsAvailable ? publicationOperatorActions : []),
-              ]),
-            ),
-            title: Type.Optional(GitHubPublicationTitleSchema),
-            body: Type.Optional(GitHubPublicationBodySchema),
-          },
-          { additionalProperties: false },
-        )
+      ? actionsAvailable
+        ? Type.Object(
+            {
+              ...GitHubPublicationActionSchema.properties,
+              ...githubPublishToolDefinition.parameters.properties,
+              action: Type.Optional(
+                stringEnum([...publicationWorkspaceActions, ...publicationOperatorActions]),
+              ),
+            },
+            { additionalProperties: false },
+          )
+        : githubPublishToolDefinition.parameters
       : Type.Object(
           {
             ...GitHubPublicationActionSchema.properties,

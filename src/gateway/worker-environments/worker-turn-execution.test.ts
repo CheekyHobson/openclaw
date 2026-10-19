@@ -320,8 +320,8 @@ describe("worker turn execution", () => {
           ownerEpoch: request.plan.admission.ownerEpoch,
           turnClaim: request.turnClaim,
         });
-        expect(runtime?.getInheritedPublicationToolName()).toBe(
-          declared ? undefined : "github_publish",
+        expect(runtime?.getAdditionalInheritedToolNames()).toEqual(
+          declared ? [] : ["github_publish"],
         );
         throw new WorkerRunnerCapacityError();
       });

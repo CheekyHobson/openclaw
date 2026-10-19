@@ -6,7 +6,6 @@ import {
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { createAdmittedRunOperatorAuthority } from "./admitted-run-context.js";
 import { createOpenClawCodingToolsInternal } from "./agent-tools.js";
-import type { AnyAgentTool } from "./agent-tools.types.js";
 import { resolveConversationCapabilityProfile } from "./conversation-capability-profile.js";
 import { resolveSandboxToolPolicyForAgent } from "./sandbox/tool-policy.js";
 import { createAgentToolsSandboxContext } from "./test-helpers/agent-tools-sandbox-context.js";
@@ -37,7 +36,7 @@ describe("publication policy inherited by a managed child", () => {
         },
       },
     };
-    const inheritedPublicationToolRef: { current?: AnyAgentTool } = {};
+    const additionalInheritedToolNamesRef: string[] = [];
     const tools = await withGatewayToolCallerIdentity(
       {
         agentId: "main",
@@ -54,7 +53,7 @@ describe("publication policy inherited by a managed child", () => {
           config,
           sessionKey: parentKey,
           githubPublicationAvailable: false,
-          inheritedPublicationToolRef,
+          additionalInheritedToolNamesRef,
           toolConstructionPlan: plan,
           wrapBeforeToolCallHook: false,
           conversationCapabilityProfile: resolveConversationCapabilityProfile({
@@ -69,12 +68,41 @@ describe("publication policy inherited by a managed child", () => {
     expect(parentPublishers[0]?.parameters).toMatchObject({
       properties: { action: { enum: ["inspect"] } },
     });
-    expect(inheritedPublicationToolRef.current?.parameters).toMatchObject({
+    expect(additionalInheritedToolNamesRef).toEqual(["github_publish"]);
+
+    const child = createOpenClawCodingToolsInternal({
+      config,
+      sessionKey: childKey,
+      githubPublicationAvailable: true,
+      toolConstructionPlan: plan,
+      wrapBeforeToolCallHook: false,
+      conversationCapabilityProfile: resolveConversationCapabilityProfile({
+        config,
+        sessionKey: childKey,
+        preparedSessionCapabilityStore: {
+          [childKey]: {
+            sessionId: "child",
+            spawnedBy: parentKey,
+            inheritedToolPolicyVersion: 1,
+            inheritedToolAllow: [...additionalInheritedToolNamesRef],
+          },
+        },
+      }),
+    });
+    const childPublishers = child.filter((tool) => tool.name === "github_publish");
+    expect(childPublishers).toHaveLength(1);
+    expect(childPublishers[0]?.parameters).toMatchObject({
       properties: { action: { enum: ["publish"] } },
     });
   });
 
-  it.each([
+  it.each<{
+    name: string;
+    tools: NonNullable<OpenClawConfig["tools"]>;
+    runtime?: string[];
+    inheritedDeny?: string[];
+    expected: boolean;
+  }>([
     { name: "permitted publication", tools: { allow: allowed }, expected: true },
     {
       name: "explicit denial",
@@ -88,9 +116,41 @@ describe("publication policy inherited by a managed child", () => {
       runtime: ["sessions_spawn"],
       expected: false,
     },
+    {
+      name: "deployment tool exclusion",
+      tools: { allow: allowed, gatewayPolicy: { allow: ["sessions_spawn"] } },
+      expected: false,
+    },
+    {
+      name: "deployment action restriction",
+      tools: {
+        allow: allowed,
+        gatewayPolicy: {
+          allow: allowed,
+          actions: { github_publish: ["inspect"] },
+        },
+      },
+      expected: false,
+    },
+    {
+      name: "profile restriction",
+      tools: { profile: "minimal", alsoAllow: ["sessions_spawn"] },
+      expected: false,
+    },
+    {
+      name: "sender restriction",
+      tools: { allow: allowed, toolsBySender: { "*": { deny: ["github_publish"] } } },
+      expected: false,
+    },
+    {
+      name: "inherited denial",
+      tools: { allow: allowed },
+      inheritedDeny: ["github_publish"],
+      expected: false,
+    },
   ])(
     "preserves $name when the parent has no publishable repository",
-    ({ tools, runtime, expected }) => {
+    ({ tools, runtime, inheritedDeny, expected }) => {
       const config: OpenClawConfig = {
         agents: { entries: { main: {} } },
         tools: { ...tools, sandbox: { tools: { alsoAllow: ["github_publish"] } } },
@@ -117,7 +177,17 @@ describe("publication policy inherited by a managed child", () => {
           runtimeToolAllowlist: runtime,
           inheritRuntimeToolAllowlist: true,
           sandboxToolPolicy: sandbox.tools,
-          preparedSessionCapabilityStore: {},
+          preparedSessionCapabilityStore: inheritedDeny
+            ? {
+                [parentKey]: {
+                  sessionId: "parent",
+                  spawnedBy: "agent:main:dashboard:grandparent",
+                  inheritedToolPolicyVersion: 1,
+                  inheritedToolAllow: allowed,
+                  inheritedToolDeny: inheritedDeny,
+                },
+              }
+            : {},
         }),
       });
       expect(parent.some((tool) => tool.name === "github_publish")).toBe(false);
@@ -125,7 +195,10 @@ describe("publication policy inherited by a managed child", () => {
 
       // Child construction has its own valid publication fact. The captured parent
       // ceiling remains authoritative even when the child's local policy permits it.
-      const childConfig: OpenClawConfig = { agents: config.agents, tools: { allow: allowed } };
+      const childConfig: OpenClawConfig = {
+        agents: config.agents,
+        tools: { allow: allowed, gatewayPolicy: tools.gatewayPolicy },
+      };
       const child = createOpenClawCodingToolsInternal({
         config: childConfig,
         sessionKey: childKey,
