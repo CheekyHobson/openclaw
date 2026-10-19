@@ -98,7 +98,10 @@ suite.define(() => {
 
       const { loadOrCreateDeviceIdentity, publicKeyRawBase64UrlFromPem } =
         await import("../../../src/infra/device-identity.js");
-      const identity = loadOrCreateDeviceIdentity({ identityKey: "device-alias-proof" });
+      const identity = loadOrCreateDeviceIdentity({
+        env: state.env,
+        identityKey: "device-alias-proof",
+      });
       await approvePairing({
         deviceId: identity.deviceId,
         publicKey: publicKeyRawBase64UrlFromPem(identity.publicKeyPem),

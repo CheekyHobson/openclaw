@@ -154,6 +154,7 @@ suite.define(() => {
         });
         state.applyEnv();
         const orphan = loadOrCreateDeviceIdentity({
+          env: state.env,
           identityKey: "legacy-device",
         });
         const orphanRequest = await requestDevicePairing({
