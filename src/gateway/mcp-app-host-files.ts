@@ -15,7 +15,10 @@ import { formatErrorMessage } from "../infra/errors.js";
 import { logDebug } from "../logger.js";
 import { retainGatewayDeviceRevocation } from "./device-revocation.js";
 import { requireMcpAppInteraction, resolveMcpAppRequesterId } from "./mcp-app-operations.js";
-import { assertSessionFileReadPolicy } from "./server-methods/session-file-read-authority.js";
+import {
+  assertSessionFileReadPolicy,
+  sessionFileWorkspaceMatches,
+} from "./server-methods/session-file-read-authority.js";
 import { retainSessionScopedRead } from "./server-methods/session-scoped-read.js";
 import { prepareLocalSessionWorkspaceRoot } from "./server-methods/sessions-files.js";
 import type { GatewayRequestHandlerOptions } from "./server-methods/types.js";
@@ -82,11 +85,8 @@ async function captureHostFileSession(
     assertCurrent() {
       assertRoutingCurrent(getConfig());
       const current = readEntry();
-      if (
-        current?.sessionId !== initial?.sessionId ||
-        current?.lifecycleRevision !== initial?.lifecycleRevision
-      ) {
-        throw new Error("App file session generation changed");
+      if (!sessionFileWorkspaceMatches(initial, current)) {
+        throw new Error("App file session workspace changed");
       }
     },
     readEntry,

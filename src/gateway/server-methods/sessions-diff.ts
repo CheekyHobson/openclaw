@@ -55,7 +55,11 @@ export async function loadSessionDiff(
     ...(unavailableReason ? { unavailableReason } : {}),
   });
   return await withSessionFileRoot(
-    { ...params, projection: ["sessionDiffBaseline"] },
+    {
+      ...params,
+      projection: ["sessionDiffBaseline"],
+      getRuntimeConfig: context ? () => context.getRuntimeConfig() : getRuntimeConfig,
+    },
     context?.getRuntimeConfig() ?? getRuntimeConfig(),
     async (loaded, assertSourceCurrent) => {
       const { agentId, entry, storePath } = loaded;
@@ -106,7 +110,7 @@ export async function loadSessionDiff(
       const cwd = loaded.diffCwd;
       const checkoutPending = Boolean(entry.pendingWorktree || entry.pendingProjectGitUrl);
       if (!cwd) {
-        return empty(checkoutPending ? undefined : "unknown_session");
+        return empty(checkoutPending ? undefined : loaded.root ? "not_git" : "unknown_session");
       }
       timing?.mark("managedBase");
       const managedBase = entry.worktree?.id

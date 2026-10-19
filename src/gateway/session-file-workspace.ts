@@ -76,7 +76,8 @@ export async function prepareSessionFileWorkspace(
           workspaceDir: roots.diffCwd,
         }).workspaceDir
       : undefined;
-    roots = { ...roots, root, spawnedCwd: undefined, diffCwd: root, readScope: "root" };
+    // Private files are admitted, but their Git metadata is not a host checkout grant.
+    roots = { ...roots, root, spawnedCwd: undefined, diffCwd: undefined, readScope: "root" };
   }
   return {
     ...roots,

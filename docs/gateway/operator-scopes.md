@@ -87,8 +87,10 @@ sharing and visibility.
 Archiving a session does not grant permission to delete it.
 
 Session readers can review changes with `sessions.diff` for conversations they can
-currently read, including their own private sessions. Existing sharing, agent,
-and sandbox access rules still apply; no general Gateway read grant is needed.
+currently read when the session has an admitted project checkout. Unmanaged
+private sandbox file workspaces return `not_git`; their Files browser remains
+available. Existing sharing, agent, and sandbox access rules still apply; no
+general Gateway read grant is needed.
 
 Session readers can use `sessions.files.list`, `sessions.files.get`, and
 `sessions.files.assets` for files within the workspace admitted to both the

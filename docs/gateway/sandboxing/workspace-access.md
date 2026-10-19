@@ -34,6 +34,11 @@ visibility alone does not let a sandbox-required reader browse an unsandboxed
 shared host workspace. Ordinary nonsandbox-required read-only readers keep
 their existing in-root access.
 
+The Changes view requires an admitted project checkout. An unmanaged private
+sandbox remains available in Files, but Changes returns the existing `not_git`
+notice instead of running host Git against private sandbox metadata. Managed
+project and admitted host checkouts retain their existing diff behavior.
+
 ## Managed project workspaces
 
 A sandboxed session with a session-owned managed worktree uses a private Git

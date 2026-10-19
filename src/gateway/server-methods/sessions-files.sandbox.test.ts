@@ -13,6 +13,7 @@ import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import type { InternalSessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import * as checkoutDiff from "../../sessions/session-diff.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { createDirectChatContext } from "../server-chat.agent-events.test-helpers.js";
 import { handleGatewayRequest } from "../server-methods.js";
@@ -176,6 +177,27 @@ it("keeps real guest file requests in their session's private sandbox", async ()
           "hardlinked path not allowed",
         );
         await fs.unlink(path.join(layout.workspaceDir, "host-hardlink.txt"));
+        const externalRepo = await initializeManagedWorktreeTestRepository(
+          state.path("external-diff-source"),
+        );
+        await fs.writeFile(
+          path.join(externalRepo, "outside-private.txt"),
+          "SYNTHETIC_HOST_DIFF_BYTES\n",
+        );
+        await requireGit(externalRepo, ["add", "outside-private.txt"]);
+        await requireGit(externalRepo, ["commit", "-m", "synthetic external content"]);
+        const gitPointer = path.join(layout.workspaceDir, ".git");
+        await fs.writeFile(gitPointer, `gitdir: ${path.join(externalRepo, ".git")}\n`);
+        const hostDiff = vi.spyOn(checkoutDiff, "loadCheckoutDiff");
+        try {
+          const diff = expectSuccess(await request("diff", { scope: "uncommitted" }));
+          expect(diff).toMatchObject({ unavailableReason: "not_git", files: [] });
+          expect(JSON.stringify(diff)).not.toContain("SYNTHETIC_HOST_DIFF_BYTES");
+          expect(hostDiff).not.toHaveBeenCalled();
+        } finally {
+          hostDiff.mockRestore();
+          await fs.unlink(gitPointer);
+        }
         // A reconnect retains the session creator's workspace, not the new connection's identity.
         const reconnect = { ...owner, connId: "files-owner-reconnected" };
         expect(
