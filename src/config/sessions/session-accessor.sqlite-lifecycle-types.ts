@@ -403,6 +403,7 @@ export type ProjectedLifecycleMutation = {
     expectedEntry: SessionEntry | undefined;
     routeContext?: ConversationRouteContext | null;
     resetBoundary?: SessionResetBoundaryWrite;
+    preserveVisibilityOnRollover?: boolean;
     sessionKey: string;
   }>;
 };

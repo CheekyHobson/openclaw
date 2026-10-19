@@ -175,6 +175,8 @@ export type SessionEntryLifecycleUpsert = {
   /** Authoritative route observation for this write; omitted writes preserve valid evidence. */
   routeContext?: ConversationRouteContext | null;
   resetBoundary?: SessionResetBoundaryWrite;
+  /** Retain the current row's sharing mode when its owner explicitly rolls the incarnation. */
+  preserveVisibilityOnRollover?: boolean;
 } & (
   | {
       entry: SessionEntry;

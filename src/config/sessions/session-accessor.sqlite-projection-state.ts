@@ -129,6 +129,7 @@ export function commitProjectedSessionEntryLifecycleMutationInDatabase(
     expectedEntry,
     routeContext,
     resetBoundary,
+    preserveVisibilityOnRollover,
   } of projected.upsertedEntries) {
     const sameKeyRemoval = validatedRemovals.find((removal) => removal.sessionKey === sessionKey);
     const retained = options.currentEntrySnapshot;
@@ -188,6 +189,7 @@ export function commitProjectedSessionEntryLifecycleMutationInDatabase(
       allowStoredAliases: options.allowCanonicalRepair === true,
       preserveNodeSuggestions: options.allowCanonicalRepair === true,
       previousEntry: expectedCurrentEntry ?? null,
+      preserveVisibilityOnRollover,
       // Reset appends can change entry metadata after the authoritative read above.
       ...(!resetBoundary
         ? {

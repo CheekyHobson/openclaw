@@ -561,6 +561,7 @@ export async function buildProjectedLifecycleUpserts(
       entry: cloned,
       ...(upsert.routeContext !== undefined ? { routeContext: upsert.routeContext } : {}),
       ...(upsert.resetBoundary ? { resetBoundary: upsert.resetBoundary } : {}),
+      ...(upsert.preserveVisibilityOnRollover ? { preserveVisibilityOnRollover: true } : {}),
     });
   }
   return upsertedEntries;

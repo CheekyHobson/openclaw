@@ -91,6 +91,7 @@ export async function replaceArchivedSubagentSession(params: {
         upserts: [
           {
             sessionKey,
+            preserveVisibilityOnRollover: true,
             buildEntry: ({ currentEntry }) => {
               authority();
               if (currentEntry?.archivedAt === undefined) {

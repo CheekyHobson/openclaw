@@ -339,6 +339,7 @@ export function writeSessionEntry(
     postimages?: SessionEntryWritePostimages;
     consumePendingReset?: boolean;
     preserveNodeSuggestions?: boolean;
+    preserveVisibilityOnRollover?: boolean;
     previousEntry?: SessionEntry | null;
     observeConversation?: boolean;
     routeContext?: ConversationRouteContext | null;
@@ -493,9 +494,13 @@ export function writeSessionEntry(
   ) {
     delete normalizedEntry.publicShare;
   }
-  // The lifecycle-selected entry owns visibility copy-forward semantics.
+  // Recreation clears sharing unless the lifecycle owner explicitly retains the current mode.
   if (previousEntry && previousEntry.sessionId !== normalizedEntry.sessionId) {
-    delete normalizedEntry.visibility;
+    if (options.preserveVisibilityOnRollover) {
+      normalizedEntry.visibility = previousEntry.visibility;
+    } else {
+      delete normalizedEntry.visibility;
+    }
   }
   if (normalizedEntry.archivedAt || normalizedEntry.incognito) {
     delete normalizedEntry.pendingExecNotifications;
@@ -544,16 +549,16 @@ export function writeSessionEntry(
     // Offline import/repair can stage aliases; readiness must validate them before use.
     markCanonicalSessionValidationPending(database, [sessionKey]);
   }
+  const replacesSession =
+    canonicalPreviousEntry !== undefined &&
+    canonicalPreviousEntry.sessionId !== normalizedEntry.sessionId;
   const written = withSqliteDatabaseWriteScope(
     database.db,
     [sessionKey, sqliteSessionIdWriteScope(normalizedEntry.sessionId)],
     () => {
       // Collaboration rows belong to the exact canonical node being overwritten,
       // which can differ from the selected alias during canonicalization.
-      if (
-        canonicalPreviousEntry &&
-        canonicalPreviousEntry.sessionId !== normalizedEntry.sessionId
-      ) {
+      if (replacesSession) {
         // Doctor merges duplicate logical nodes; suggestions are owned by session_key,
         // not by the transcript generation being replaced. Membership remains winner-only.
         clearSessionCollaborationForKey(database, sessionKey, {
@@ -672,9 +677,7 @@ export function writeSessionEntry(
                 sessionId: normalizedEntry.sessionId,
                 category: normalizedEntry.category?.trim() || null,
                 communicationBinding: communicationEntryBinding(normalizedEntry),
-                clearMembers:
-                  canonicalPreviousEntry !== undefined &&
-                  canonicalPreviousEntry.sessionId !== normalizedEntry.sessionId,
+                clearMembers: replacesSession,
                 lifecycleChanged:
                   canonicalPreviousEntry?.sessionId !== normalizedEntry.sessionId ||
                   canonicalPreviousEntry?.lifecycleRevision !== normalizedEntry.lifecycleRevision,
@@ -727,9 +730,7 @@ export function writeSessionEntry(
       transcriptWatermark,
       sideTables: {
         ...canonicalPreviousSideTables,
-        ...(canonicalPreviousEntry && canonicalPreviousEntry.sessionId !== normalizedEntry.sessionId
-          ? { memberIdsJson: "[]" }
-          : {}),
+        ...(replacesSession ? { memberIdsJson: "[]" } : {}),
       },
     });
   }
