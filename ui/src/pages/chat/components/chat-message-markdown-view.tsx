@@ -98,9 +98,13 @@ export function resolveMessageActionDetails(
     ? { messageId: cappedMessageId, state: params.getAssistantMessageExpansion?.(cappedMessageId) }
     : undefined;
   const expansion = fullMessage?.state;
-  const expandedMarkdown = expansion?.status === "loaded" ? expansion.markdown : previewMarkdown;
+  // Preview text already passed through the shared display-text owner.
   const visibleMarkdown =
-    role === "assistant" ? stripThinkingTags(expandedMarkdown) : expandedMarkdown;
+    expansion?.status === "loaded"
+      ? role === "assistant"
+        ? stripThinkingTags(expansion.markdown)
+        : expansion.markdown
+      : previewMarkdown;
   const isConversationMessage = role === "assistant" || role === "user";
   const markdown = isConversationMessage || pendingInput ? visibleMarkdown : undefined;
   const copyMarkdown = resolveMessageReplyText(message, normalizedMessage, visibleMarkdown);

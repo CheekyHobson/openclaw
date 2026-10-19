@@ -225,8 +225,9 @@ export function prepareGroupedMessage(
     !normalizedMessage.replyTarget;
 
   const toolMessageDisclosureId = `toolmsg:${messageKey}`;
-  const toolMessageExpanded = opts.isToolMessageExpanded?.(toolMessageDisclosureId) ?? false;
-  const toolNames = [...new Set(toolCards.map((c) => c.name))];
+  const toolMessageExpanded =
+    isStandaloneToolMessage && (opts.isToolMessageExpanded?.(toolMessageDisclosureId) ?? false);
+  const toolNames = isStandaloneToolMessage ? [...new Set(toolCards.map((c) => c.name))] : [];
   const singleToolCard = toolCards.length === 1 ? toolCards[0] : null;
   const standaloneToolPayload =
     isStandaloneToolMessage &&
@@ -246,13 +247,14 @@ export function prepareGroupedMessage(
   const expandsSingleToolCard =
     Boolean(singleToolCard) && (!markdown || standaloneToolPayload) && !hasImages;
   const failedToolCard = expandsSingleToolCard ? undefined : toolCards.find(isToolCardError);
-  const singleToolDisplay = singleToolCard
-    ? resolveToolDisplay({
-        name: singleToolCard.name,
-        args: singleToolCard.args,
-        detailMode: "explain",
-      })
-    : null;
+  const singleToolDisplay =
+    isStandaloneToolMessage && singleToolCard
+      ? resolveToolDisplay({
+          name: singleToolCard.name,
+          args: singleToolCard.args,
+          detailMode: "explain",
+        })
+      : null;
   const singleToolDisplayDetail =
     singleToolCard && singleToolDisplay
       ? resolveCollapsedToolDetail(singleToolCard, singleToolDisplay.detail)
@@ -266,17 +268,20 @@ export function prepareGroupedMessage(
     : toolNames.length <= 3
       ? toolNames.join(", ")
       : `${toolNames.slice(0, 2).join(", ")} +${toolNames.length - 2} more`;
-  const toolPreview = markdown ? (formatCollapsedToolPreviewText(markdown) ?? "") : "";
+  const toolPreview =
+    isStandaloneToolMessage && markdown ? (formatCollapsedToolPreviewText(markdown) ?? "") : "";
   const toolMessageLabelRaw =
     singleToolDisplay && !markdown && !hasImages
       ? singleToolDisplay.label
-      : t("chat.toolCards.toolOutput");
-  const toolMessageLabel =
-    formatCollapsedToolSummaryText(toolMessageLabelRaw) ?? toolMessageLabelRaw;
-  const toolSummaryLabel = formatDistinctCollapsedToolSummaryText(
-    toolSummaryLabelRaw,
-    toolMessageLabel,
-  );
+      : isStandaloneToolMessage
+        ? t("chat.toolCards.toolOutput")
+        : "";
+  const toolMessageLabel = isStandaloneToolMessage
+    ? (formatCollapsedToolSummaryText(toolMessageLabelRaw) ?? toolMessageLabelRaw)
+    : "";
+  const toolSummaryLabel = isStandaloneToolMessage
+    ? formatDistinctCollapsedToolSummaryText(toolSummaryLabelRaw, toolMessageLabel)
+    : undefined;
   const duplicateCount = Math.max(1, Math.floor(opts.duplicateCount ?? 1));
   const duplicateSuffix =
     duplicateCount > 1

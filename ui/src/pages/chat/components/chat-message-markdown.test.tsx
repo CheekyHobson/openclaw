@@ -3,11 +3,13 @@
 // capped projection; pending inputs share assistant expansion without gaining
 // transcript mutation actions.
 import { For } from "solid-js";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveMessageDisplayMarkdown } from "../../../lib/chat/message-display.ts";
 import { extractText } from "../../../lib/chat/message-extract.ts";
 import { normalizeMessage } from "../../../lib/chat/message-normalizer.ts";
+import * as toolCards from "../../../lib/chat/tool-cards.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
+import * as assistantText from "../../../lib/strip-thinking-tags.ts";
 import { mountSolid } from "../../../test-helpers/solid-render.tsx";
 import { persistedMessageEntryId } from "../chat-thread-items.ts";
 import { GroupedMessage } from "./chat-message-bubble-view.tsx";
@@ -18,6 +20,8 @@ import {
 import { MessageMarkdown } from "./chat-message-text-view.tsx";
 
 const cappedMeta = { id: "msg-1", truncated: true, reason: "display-cap" };
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("message action projections", () => {
   const indented = "    *literal*";
@@ -33,6 +37,7 @@ describe("message action projections", () => {
         markdown?: string;
         reply?: string;
         expanded?: string;
+        expandedDisplay?: string;
         onReply?: boolean;
       },
     ]
@@ -67,7 +72,8 @@ describe("message action projections", () => {
         fullId: "msg-oversized",
         markdown: oversized,
         reply: oversized,
-        expanded: "Recovered full assistant content.",
+        expanded: "<think>Internal reasoning</think>Recovered full assistant content.",
+        expandedDisplay: "Recovered full assistant content.",
         onReply: true,
       },
     ],
@@ -84,6 +90,7 @@ describe("message action projections", () => {
       const entry = { role, content, metadata, ...expected };
       const message = { role: entry.role, content: entry.content, __openclaw: entry.metadata };
       const prepared = prepareChatMessageRender(message);
+      const strip = vi.spyOn(assistantText, "stripThinkingTags");
       const options = {
         messageId: entry.metadata.id,
         canFetchFullMessage: true,
@@ -91,6 +98,7 @@ describe("message action projections", () => {
         senderLabel: entry.role,
       };
       const details = resolveMessageActionDetails(prepared, options);
+      expect(strip).not.toHaveBeenCalled();
       expect(details?.fullMessage?.messageId).toBe(entry.fullId);
       if (!entry.fullId) {
         expect(details?.fullMessage).toBeUndefined();
@@ -105,22 +113,53 @@ describe("message action projections", () => {
         expect(extractText(message)).toBe(indented);
       }
       if (entry.expanded !== undefined) {
+        strip.mockClear();
         const markdown = entry.expanded;
         const loaded = resolveMessageActionDetails(prepared, {
           ...options,
           getAssistantMessageExpansion: () => ({ status: "loaded", markdown, revision: 1 }),
         });
         expect(loaded?.fullMessage?.messageId).toBe(entry.fullId);
-        expect(loaded?.markdown).toBe(markdown);
+        const visible = entry.expandedDisplay ?? markdown;
+        expect(loaded?.markdown).toBe(visible);
+        expect(strip).toHaveBeenCalledTimes(entry.role === "assistant" ? 1 : 0);
         if (entry.role === "user") {
           expect(loaded?.replyTarget).toBeUndefined();
           expect(persistedMessageEntryId(message)).toBeNull();
         } else if (entry.onReply) {
-          expect(loaded?.replyTarget?.text).toBe(markdown);
+          expect(loaded?.replyTarget?.text).toBe(visible);
         }
       }
     },
   );
+});
+
+it.each([
+  { role: "assistant", toolCallId: undefined, tool: false },
+  { role: "user", toolCallId: undefined, tool: false },
+  { role: "assistant", toolCallId: "call-1", tool: true },
+])("prepares a tool preview only for a tool envelope: $role / $tool", (entry) => {
+  const preview = vi.spyOn(toolCards, "formatCollapsedToolPreviewText");
+  const expanded = vi.fn(() => false);
+  const container = document.createElement("div");
+  const view = mountSolid(
+    GroupedMessage,
+    {
+      preparation: prepareChatMessageRender({
+        role: entry.role,
+        toolCallId: entry.toolCallId,
+        content: "Visible message content.",
+      }),
+      messageKey: "message",
+      options: { showReasoning: false, isStreaming: false, isToolMessageExpanded: expanded },
+    },
+    container,
+  );
+  expect(container.textContent).toContain("Visible message content.");
+  expect(preview).toHaveBeenCalledTimes(entry.tool ? 1 : 0);
+  expect(expanded).toHaveBeenCalledTimes(entry.tool ? 1 : 0);
+  expect(container.querySelector(".chat-tool-msg-summary") !== null).toBe(entry.tool);
+  view.dispose();
 });
 
 describe("user message disclosure", () => {
