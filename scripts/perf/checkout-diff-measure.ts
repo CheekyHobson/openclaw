@@ -48,7 +48,8 @@ Use --boundary read for loadCheckoutDiff, omit --summary for full patches, and
 omit --mutate for unchanged polls. Set --poll-ms 10050 to cross the old summary
 cache TTL. --start-at <epoch-ms> synchronizes concurrent baseline/candidate pairs.
 Git trace2 counts real subprocesses; its small write cost is included on both sides.
-Use --boundary rpc for real sessions.diff WebSocket requests with --tabs 3,
+Use --boundary rpc for real sessions.diff WebSocket requests; add --summary for
+summary polls. Combine --tabs 3 with
 --background 8 full-diff readers, --maintenance 2 bounded Git readers, and
 --agents 2 external Git loops. --heavy-files/--heavy-lines size the seeded load
 checkout. The RPC boundary starts an isolated loopback Gateway on --port >=40000.
@@ -60,7 +61,8 @@ Use --observe-git-queues to collect queue timings through benchmark-only loader
 instrumentation applied identically to both revisions. No production state or model
 is involved. --churn-ms 1000 periodically saves identical tracked content, runs
 git status on the polling checkout, and rotates an ignored build file. Unchanged
-responses must match warmup, and a real post-run edit must reach every tab.`);
+responses must match warmup. A real post-run edit must reach every tab within
+12 seconds; first-poll visibility and eventual visibility timing are recorded.`);
   process.exit(0);
 }
 const integer = (raw: string, label: string, min = 0) =>
@@ -505,7 +507,7 @@ async function measureRpc(fixture: object) {
       params: {
         sessionKey: `agent:main:synthetic-diff-contention${checkout ? `-${checkout}` : ""}`,
         scope: "all",
-        summaryOnly: true,
+        summaryOnly: values.summary === true,
       },
     }));
     for (const target of targets) {
@@ -684,6 +686,8 @@ async function measureRpc(fixture: object) {
     await waitForDiagnosticEventsDrained();
     measured = false;
     let editControlVerified = false;
+    let editFirstPollVisible: boolean[] = [];
+    let editVisibilityMs: number[] = [];
     if (churnMs) {
       const changedFile = savedFile;
       const originalContent = await fs.readFile(changedFile);
@@ -692,19 +696,48 @@ async function measureRpc(fixture: object) {
           changedFile,
           "Synthetic tracked content\nReal edit one\nReal edit two\n",
         );
-        await Promise.all(
+        const editStarted = performance.now();
+        const editDeadline = editStarted + 12_000;
+        const visibility = await Promise.all(
           peers.map(async (peer) => {
-            const result = await peer.request<
-              import("../../packages/gateway-protocol/src/index.js").SessionsDiffResult
-            >("sessions.diff", targets[0]!.params);
-            assert.equal(
-              result.files.find((file) => file.path === "unchanged.txt")?.additions,
-              2,
-              "a real post-churn edit must reach every tab",
-            );
+            let firstPollVisible = false;
+            for (let poll = 0; ; poll++) {
+              const remainingMs = editDeadline - performance.now();
+              if (remainingMs <= 0) {
+                return {
+                  firstPollVisible,
+                  visible: false,
+                  elapsedMs: performance.now() - editStarted,
+                };
+              }
+              const result = await peer
+                .request<import("../../packages/gateway-protocol/src/index.js").SessionsDiffResult>(
+                  "sessions.diff",
+                  targets[0]!.params,
+                  { timeoutMs: remainingMs },
+                )
+                .catch(() => undefined);
+              const visible =
+                result?.files.find((file) => file.path === "unchanged.txt")?.additions === 2;
+              if (poll === 0) {
+                firstPollVisible = visible;
+              }
+              const receivedAt = performance.now();
+              const timelyVisible = visible && receivedAt <= editDeadline;
+              if (!result || timelyVisible || receivedAt >= editDeadline) {
+                return {
+                  firstPollVisible,
+                  visible: timelyVisible,
+                  elapsedMs: receivedAt - editStarted,
+                };
+              }
+              await delay(Math.min(250, editDeadline - receivedAt));
+            }
           }),
         );
-        editControlVerified = true;
+        editFirstPollVisible = visibility.map((result) => result.firstPollVisible);
+        editVisibilityMs = visibility.map((result) => result.elapsedMs);
+        editControlVerified = visibility.every((result) => result.visible);
       } finally {
         await fs.writeFile(changedFile, originalContent);
       }
@@ -751,6 +784,7 @@ async function measureRpc(fixture: object) {
     const report = {
       revision: values.revision ?? null,
       boundary: "rpc",
+      summaryOnly: values.summary === true,
       fixture,
       extraFixtures,
       checkoutCount: checkoutRoots.length,
@@ -762,6 +796,8 @@ async function measureRpc(fixture: object) {
       completedChurn: churnTimings.length,
       churnLatencyMs: churnTimings.length ? summarize(churnTimings) : null,
       editControlVerified,
+      editFirstPollVisible,
+      editVisibilityMs,
       durationMs,
       warmupRpcMs,
       completedRpc: rpcSamples.length,
@@ -843,6 +879,9 @@ async function measureRpc(fixture: object) {
         diffPhases: report.diffPhases,
       }),
     );
+    if (churnMs) {
+      assert(editControlVerified, "a real post-churn edit must reach every tab within 12 seconds");
+    }
   } finally {
     stopPhases();
     operationChannel.unsubscribe(observe);

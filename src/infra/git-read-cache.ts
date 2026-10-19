@@ -365,6 +365,7 @@ function createReadCaches() {
             input: {
               root: input.cwd,
               scope: "diff",
+              summaryOnly: input.summaryOnly,
               paths: previous?.files.flatMap((file) =>
                 file.oldPath ? [file.path, file.oldPath] : [file.path],
               ),
@@ -394,6 +395,7 @@ function createReadCaches() {
             input: {
               root: input.cwd,
               scope: "diff",
+              summaryOnly: input.summaryOnly,
               paths: previous?.files.flatMap((file) =>
                 file.oldPath ? [file.path, file.oldPath] : [file.path],
               ),

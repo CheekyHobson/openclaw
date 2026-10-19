@@ -273,7 +273,11 @@ describe("typed Git read ownership", () => {
 
   it("shares summary work until expiry without duplicating a slow scan or reusing full patches", async () => {
     vi.useFakeTimers();
-    readRevision.mockResolvedValue(null);
+    vi.mocked(runGitWorkerOperation).mockImplementation((operation, options) =>
+      operation.type === "checkout.revision"
+        ? Promise.resolve(operation.input.summaryOnly ? null : "unchanged-full-diff")
+        : gitRead(operation, options),
+    );
     const held = createDeferredCore<GitReadOperations["checkout.diff"]["output"]>();
     onTestFinished(() => held.resolve(emptyDiff));
     gitRead.mockReturnValueOnce(held.promise);
@@ -304,6 +308,10 @@ describe("typed Git read ownership", () => {
     gitRead.mockResolvedValueOnce({ ...emptyDiff, additions: 5 });
     await expect(loadCheckoutDiff({ ...input, sessionKey: "first" })).resolves.toMatchObject({
       additions: 5,
+    });
+    expect(gitRead).toHaveBeenCalledTimes(4);
+    await expect(loadCheckoutDiff({ cwd: input.cwd, sessionKey: "first" })).resolves.toMatchObject({
+      additions: 4,
     });
     expect(gitRead).toHaveBeenCalledTimes(4);
   });

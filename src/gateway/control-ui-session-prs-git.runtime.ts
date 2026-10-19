@@ -36,6 +36,7 @@ export async function readCheckoutGitRevision(
     scope,
     branch,
     defaultBranch,
+    summaryOnly = false,
     paths: diffPaths,
   }: GitReadOperations["checkout.revision"]["input"],
   timing?: DiffReadTiming,
@@ -45,7 +46,7 @@ export async function readCheckoutGitRevision(
   }
   try {
     if (scope === "diff") {
-      return await readCheckoutDiffRevision(root, diffPaths, timing);
+      return await readCheckoutDiffRevision(root, diffPaths, summaryOnly, timing);
     }
     const head = readGitHead(root, { maxDepth: 1 });
     const checkout = readCheckoutHead(root);
@@ -201,6 +202,7 @@ async function readGitInstallationFiles(
 async function readCheckoutDiffRevision(
   root: string,
   previousPaths: string[] = [],
+  summaryOnly = false,
   timing?: DiffReadTiming,
 ): Promise<string | null> {
   const environment = createHash("sha256")
@@ -226,10 +228,6 @@ async function readCheckoutDiffRevision(
   }
   const { gitDir, commonDir } = directories;
   const hash = createHash("sha256").update(environment);
-  const head = createHash("sha256");
-  const index = createHash("sha256");
-  const untrackedSet = createHash("sha256");
-  const worktreeMtime = createHash("sha256");
   let remaining = 10_000;
   const oversized = () => {
     if (timing) {
@@ -370,25 +368,20 @@ async function readCheckoutDiffRevision(
       const files = [root];
       const pending = [root];
       for (const parent of pending) {
-        const handle = fs.opendirSync(parent);
-        try {
-          for (let entry; (entry = handle.readSync());) {
-            if (entry.name === ".git") {
-              if (parent !== root) {
-                return null;
-              }
-              continue;
-            }
-            const file = nodePath.join(parent, entry.name);
-            if (files.push(file) > remaining - 2) {
+        for (const entry of entries(parent)) {
+          if (entry.name === ".git") {
+            if (parent !== root) {
               return null;
             }
-            if (entry.isDirectory()) {
-              pending.push(file);
-            }
+            continue;
           }
-        } finally {
-          handle.closeSync();
+          const file = nodePath.join(parent, entry.name);
+          if (files.push(file) > remaining - 2) {
+            oversized();
+          }
+          if (entry.isDirectory()) {
+            pending.push(file);
+          }
         }
       }
       const stamp = hash.copy();
@@ -403,7 +396,12 @@ async function readCheckoutDiffRevision(
     }
   })();
   remaining = semanticBudget;
-  const memoKey = JSON.stringify([root, environment, previousPaths.toSorted()]);
+  // Oversized summaries already allow a 10-second fallback. A full status scan
+  // on each poll costs more than that retained summary; full diffs require freshness.
+  if (!fingerprint && summaryOnly) {
+    return null;
+  }
+  const memoKey = JSON.stringify([root, environment, summaryOnly, previousPaths.toSorted()]);
   const memo = smallDiffRevisions.get(memoKey);
   smallDiffRevisions.delete(memoKey);
   if (fingerprint && memo?.fingerprint === fingerprint) {
@@ -431,6 +429,10 @@ async function readCheckoutDiffRevision(
   if (status.code !== 0 || status.termination !== "exit" || status.stdout.includes("\uFFFD")) {
     return null;
   }
+  const head = createHash("sha256");
+  const index = createHash("sha256");
+  const untrackedSet = createHash("sha256");
+  const worktreeMtime = createHash("sha256");
   const paths = new Set(previousPaths);
   for (const record of status.stdout.split("\0").filter(Boolean)) {
     if (record.startsWith("# ")) {
