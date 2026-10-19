@@ -1,7 +1,9 @@
 import { writeFileSync } from "node:fs";
 import type { Session } from "node:inspector/promises";
+import { basename } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { Worker } from "node:worker_threads";
+import { normalizeDiagnosticWorkerScript } from "../../src/infra/worker-diagnostic-script.ts";
 import { coerceErrorMessage as errorMessage } from "./error-format.mts";
 import {
   GATEWAY_CPU_SAMPLE_INTERVAL_MICROS,
@@ -9,7 +11,12 @@ import {
   type GatewayProfileCommand,
 } from "./gateway-bench-profile.ts";
 
-type WorkerTarget = { sessionId: string; inspectorWorkerId: string; threadId?: number };
+type WorkerTarget = {
+  sessionId: string;
+  inspectorWorkerId: string;
+  threadId?: number;
+  script: string;
+};
 type WorkerSample = {
   threadId: number;
   cpu?: NodeJS.CpuUsage;
@@ -73,7 +80,7 @@ export class GatewayBenchWorkerProfiler {
       ({
         params,
       }: {
-        params: { sessionId: string; workerInfo: { workerId: string; title: string } };
+        params: { sessionId: string; workerInfo: { workerId: string; title: string; url: string } };
       }) => {
         // Node's WorkerStartedRequest prefixes the native ID before any user-supplied name.
         // Its inspector target ID has a separate allocation order.
@@ -82,6 +89,9 @@ export class GatewayBenchWorkerProfiler {
         const target = {
           sessionId: params.sessionId,
           inspectorWorkerId: params.workerInfo.workerId,
+          script: normalizeDiagnosticWorkerScript(
+            basename(params.workerInfo.url).replace(/\.[cm]?[jt]s$/u, ".js"),
+          ),
           threadId: Number.isSafeInteger(threadId) ? threadId : undefined,
         };
         this.targets.set(target.sessionId, target);
@@ -257,6 +267,7 @@ export class GatewayBenchWorkerProfiler {
         cpuCounters: "cumulative-microseconds",
         workers: capture.recordings.map(({ pending: _pending, target, ...row }) => ({
           inspectorWorkerId: target.inspectorWorkerId,
+          script: target.script,
           ...row,
         })),
         samples: capture.samples,

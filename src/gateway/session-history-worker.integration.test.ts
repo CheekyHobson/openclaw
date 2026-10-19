@@ -5,19 +5,26 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { expect, it, vi } from "vitest";
-import { withinTest } from "../../test/helpers/promise.js";
+import {
+  awaitGateBeforeSettlement,
+  createDeferred,
+  withinTest,
+} from "../../test/helpers/promise.js";
 import { readMainSessionRecoveryCheckpoint } from "../agents/main-session-recovery/main-session-restart-recovery-checkpoint.js";
 import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import {
   appendTranscriptEvent,
   appendTranscriptMessage,
+  appendTranscriptMessageSync,
   replaceSessionEntry,
+  replaceSessionEntrySync,
   waitForSessionTranscriptProjection,
 } from "../config/sessions/session-accessor.js";
 import { patchSessionEntryCore } from "../config/sessions/session-accessor.sqlite-entry.js";
 import { readTranscriptDisplayDelta } from "../config/sessions/session-accessor.sqlite-history-events.test-support.js";
 import { readActiveTranscriptEntryAnchor } from "../config/sessions/session-accessor.sqlite-transcript-anchor.js";
 import { replaceTranscriptEvents } from "../config/sessions/session-accessor.sqlite-transcript-write.test-support.js";
+import * as coldStorageRead from "../config/sessions/session-cold-storage-read.js";
 import { readSessionColdTranscript } from "../config/sessions/session-cold-storage-state.js";
 import { runSessionColdStorageMaintenance } from "../config/sessions/session-cold-storage.js";
 import {
@@ -26,13 +33,25 @@ import {
   historicalId,
   maintenanceConfig,
 } from "../config/sessions/session-cold-storage.test-support.js";
-import type { ChatHistoryPageParams } from "../config/sessions/session-history-types.js";
+import type {
+  ChatHistoryPageParams,
+  SessionHistoryWorkerResult,
+} from "../config/sessions/session-history-types.js";
 import { readSessionHistoryPageInWorker } from "../config/sessions/session-history-worker-runtime.js";
+import { captureSessionStoreReadCandidate } from "../config/sessions/session-store-read-candidates.js";
 import { runWithSessionTranscriptReadFence } from "../config/sessions/session-transcript-read-fence.js";
+import * as reconcile from "../config/sessions/session-transcript-reconcile.js";
+import * as workerRuntime from "../config/sessions/session-transcript-worker-runtime.js";
 import { isSessionHistoryWorkerCold } from "../config/sessions/session-transcript-worker-runtime.js";
+import type { SessionHistoryWorkerDatabase } from "../config/sessions/session-transcript-worker.types.js";
+import { readSqliteDatabaseWriteTokenForPath } from "../infra/sqlite-database-admission.js";
+import { OPENCLAW_AGENT_SCHEMA_VERSION } from "../state/openclaw-agent-db-contract.js";
 import { closeOpenClawAgentDatabasesAsync } from "../state/openclaw-agent-db-lifecycle.js";
 import { openOpenClawAgentDatabase } from "../state/openclaw-agent-db.js";
 import { closeOpenClawStateDatabaseAsync } from "../state/openclaw-state-db-cache.js";
+import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
+import { setDisplayName } from "../state/user-profile-writes.worker.js";
+import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { readChatHistoryPage } from "./server-methods/chat-history-pages.js";
 import {
@@ -51,6 +70,7 @@ import {
   readSessionTranscriptSummaryAsync,
 } from "./session-transcript-readers.js";
 import { readLatestSessionUsageFromTranscriptAsync } from "./session-transcript-usage.js";
+import * as storeSources from "./session-utils-store-sources.js";
 
 async function sourceDigest(filePath: string): Promise<string> {
   const hash = createHash("sha256");
@@ -59,6 +79,146 @@ async function sourceDigest(filePath: string): Promise<string> {
   }
   return hash.digest("hex");
 }
+
+it("shares active RPC pages until a transcript, profile, or auxiliary-store commit", async (test) => {
+  await withHistoryState(async (state) => {
+    const targets = ["main", "auxiliary"].map((agentId) => ({
+      agentId,
+      sessionId: `${agentId}-history`,
+      sessionKey: `agent:${agentId}:history`,
+      storePath: path.join(state.agentDir(agentId), "openclaw-agent.sqlite"),
+    }));
+    const primary = targets[0]!;
+    const auxiliary = targets[1]!;
+    for (const target of targets) {
+      replaceSessionEntrySync(target, { sessionId: target.sessionId, updatedAt: 1 });
+    }
+    const profile = ensureProfileForEmail("history-reader@example.test");
+    for (const pathname of [
+      ...targets.map((target) => target.storePath),
+      resolveOpenClawStateSqlitePath(),
+    ]) {
+      expect(readSqliteDatabaseWriteTokenForPath(pathname)).toBeTypeOf("string");
+    }
+    const queued: Array<{
+      prepare: Parameters<SessionHistoryWorkerDatabase["run"]>[0];
+      result: ReturnType<typeof createDeferred<SessionHistoryWorkerResult>>;
+    }> = [];
+    const readers: Array<ReturnType<typeof readChatHistoryPage>> = [];
+    let admitted = createDeferred();
+    const withDatabase = workerRuntime.withSessionHistoryWorkerDatabase;
+    const readRestored = coldStorageRead.readRestoredSessionTranscript;
+    // Keep real database custody and receipts; control only page dispatch and completion.
+    const scheduling = vi
+      .spyOn(workerRuntime, "withSessionHistoryWorkerDatabase")
+      .mockImplementation((options, operation, lane) =>
+        withDatabase(
+          options,
+          (owner) =>
+            operation({
+              ...owner,
+              run(prepare) {
+                const result = createDeferred<SessionHistoryWorkerResult>();
+                queued.push({ prepare, result });
+                return result.promise;
+              },
+            }),
+          lane,
+        ),
+      );
+    const admission = vi
+      .spyOn(coldStorageRead, "readRestoredSessionTranscript")
+      .mockImplementation((scope, read, options) => {
+        const result = readRestored(scope, read, options);
+        admitted.resolve();
+        return result;
+      });
+    const projection = vi
+      .spyOn(reconcile, "startSessionTranscriptIndexReconcile")
+      .mockImplementation(() => {});
+    const sources = vi
+      .spyOn(storeSources, "prepareGatewaySessionStoreReadSourcesAsync")
+      .mockImplementation(async ({ currentSource, env }) => ({
+        request: {
+          routing: { agentIds: ["main", "auxiliary"], compatibilityAgentId: "main" },
+          currentSource,
+          env,
+          registeredDatabases: targets.map((target) => ({
+            agentId: target.agentId,
+            path: target.storePath,
+            schemaVersion: OPENCLAW_AGENT_SCHEMA_VERSION,
+          })),
+          candidates: targets.map((target) => captureSessionStoreReadCandidate(target.storePath)),
+        },
+        assertCurrent() {},
+      }));
+    const page = (index: number): Extract<SessionHistoryWorkerResult, { kind: "rpc" }> => ({
+      kind: "rpc",
+      page: { messages: [{ role: "assistant", content: `snapshot ${index}` }] },
+    });
+    const read = async (overrides: Partial<ChatHistoryPageParams> = {}) => {
+      admitted = createDeferred();
+      const pending = readChatHistoryPage({
+        ...historyParams(primary, { sessionId: primary.sessionId, updatedAt: 1 }),
+        ...overrides,
+      });
+      readers.push(pending);
+      await withinTest(
+        awaitGateBeforeSettlement(
+          admitted.promise,
+          pending,
+          "History read settled before admission",
+        ),
+        test.signal,
+      );
+    };
+    try {
+      await read();
+      queued[0]!.prepare();
+      await read();
+      expect(queued).toHaveLength(1);
+      await read({ max: 2 });
+      expect(queued).toHaveLength(2);
+      queued[1]!.prepare();
+      const append = (target: (typeof targets)[number]) => {
+        expect(
+          appendTranscriptMessageSync(target, {
+            eventId: `${target.agentId}-append`,
+            message: { role: "assistant", content: "Committed after the first page started" },
+          }),
+        ).toMatchObject({ ok: true });
+      };
+      const commits = [
+        () => append(primary),
+        () => setDisplayName(profile.id, "Renamed history reader"),
+        () => append(auxiliary),
+      ];
+      for (const [index, commit] of commits.entries()) {
+        commit();
+        await read();
+        expect(queued).toHaveLength(index + 3);
+        queued[index + 2]!.prepare();
+        await read();
+        expect(queued).toHaveLength(index + 3);
+      }
+      for (const [index, job] of queued.entries()) {
+        job.result.resolve(page(index));
+      }
+      expect(await Promise.all(readers)).toEqual(
+        [0, 0, 1, 2, 2, 3, 3, 4, 4].map((index) => page(index).page),
+      );
+    } finally {
+      for (const job of queued) {
+        job.result.resolve(page(-1));
+      }
+      await Promise.allSettled(readers);
+      scheduling.mockRestore();
+      admission.mockRestore();
+      projection.mockRestore();
+      sources.mockRestore();
+    }
+  });
+});
 
 it("reads oversized native history without caller-thread JSON.parse and survives ordinary close", async (test) => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {

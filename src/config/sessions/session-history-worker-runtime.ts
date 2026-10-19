@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { PreparedSessionHistoryReadTarget } from "../../gateway/session-history-read.types.js";
 import { prepareGatewaySessionStoreReadSourcesAsync } from "../../gateway/session-utils-store-sources.js";
+import { readSqliteDatabaseWriteTokenForPath } from "../../infra/sqlite-database-admission.js";
 import {
   DEFAULT_WORKER_PENDING_BYTES,
   DEFAULT_WORKER_PENDING_TASKS,
@@ -66,7 +67,7 @@ function receivePage(
     (page) => {
       queued.remainingReaders--;
       signal?.throwIfAborted();
-      // Dispatch closes the group; the final receiver owns the original after earlier clones finish.
+      // The final receiver owns the original after earlier clones finish.
       if (queued.remainingReaders === 0) {
         return page;
       }
@@ -107,6 +108,7 @@ function readQueuedHistory(
   key: string,
   owner: SessionHistoryWorkerDatabase,
   signal?: AbortSignal,
+  shareActive = false,
 ): Promise<ForegroundHistoryResult> {
   signal?.throwIfAborted();
   const existing = queuedHistoryReads.get(key);
@@ -125,8 +127,10 @@ function readQueuedHistory(
     input.kind === "cold-metadata"
       ? owner.readColdMetadata({ sessionId: input.sessionId, env: input.env })
       : owner.run(() => {
-          // Page callers cannot join a SQLite snapshot that has already started.
-          forget();
+          // Without all source revisions, only queued callers can share a snapshot.
+          if (!shareActive) {
+            forget();
+          }
           return input;
         }, key.length * 2);
   // Initial metadata probes share only in-flight work; queued restores bypass this map.
@@ -141,6 +145,29 @@ function readQueuedHistory(
     },
   );
   return receivePage(queued, signal);
+}
+
+function captureHistoryWriteTokens(input: SessionTranscriptHistoryWorkerInput) {
+  const { request, target } = input;
+  const candidates = target.sourceDiscovery?.candidates;
+  if (
+    request.kind !== "rpc" ||
+    getCliSessionBinding(request.params.entry, "claude-cli")?.sessionId ||
+    !target.stateDatabase ||
+    !candidates ||
+    candidates.some((candidate) => candidate.scope)
+  ) {
+    return undefined;
+  }
+  // Unadmitted stores and open-ended file discovery have no complete revision vector.
+  const tokens = [
+    ...new Set([
+      input.database.path,
+      target.stateDatabase.path,
+      ...candidates.map((candidate) => candidate.physicalPath),
+    ]),
+  ].map(readSqliteDatabaseWriteTokenForPath);
+  return tokens.every((token) => token !== undefined) ? tokens : undefined;
 }
 
 function captureHistoryRequest(request: SessionHistoryWorkerRequest): SessionHistoryWorkerRequest {
@@ -383,16 +410,24 @@ export async function readSessionHistoryPageInWorker(
                 ? capturedRequest.params.options.readOnly
                 : false;
       let retriedProjection = false;
-      const readPage = () =>
-        capturedRequest.kind === "active-accounting"
-          ? runOpenClawAgentWriteAdmission(
-              databaseOptions,
-              () => readQueuedHistory(input, key, owner, signal),
-              true,
-              undefined,
-              signal,
-            )
-          : readQueuedHistory(input, key, owner, signal);
+      const readPage = () => {
+        // Restoration and projection recovery can commit between attempts.
+        const tokens = captureHistoryWriteTokens(input);
+        if (tokens) {
+          sourceReads?.assertCurrent();
+        }
+        const read = () =>
+          readQueuedHistory(
+            input,
+            tokens ? key + JSON.stringify(tokens) : key,
+            owner,
+            signal,
+            tokens !== undefined,
+          );
+        return capturedRequest.kind === "active-accounting"
+          ? runOpenClawAgentWriteAdmission(databaseOptions, read, true, undefined, signal)
+          : read();
+      };
       try {
         if (exactArchiveRead) {
           const page = await readPage();

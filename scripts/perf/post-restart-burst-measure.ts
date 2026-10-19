@@ -10,6 +10,7 @@ import { buildDeviceAuthPayloadV3 } from "../../packages/gateway-client/src/devi
 import { PROTOCOL_VERSION } from "../../packages/gateway-protocol/src/version.ts";
 import { isRecord } from "../../packages/normalization-core/src/record-coerce.ts";
 import { stripInboundMetadata } from "../../src/auto-reply/reply/strip-inbound-meta.js";
+import { readChatHistoryMessageId } from "../../src/gateway/session-history-tail.js";
 import {
   publicKeyRawBase64UrlFromEd25519Pem,
   signEd25519Payload,
@@ -21,6 +22,7 @@ import {
 } from "../e2e/lib/mock-inference-facts.ts";
 import { readBody } from "../e2e/lib/mock-openai-http.mjs";
 import { stopChild } from "../lib/gateway-bench-child.ts";
+import { controlGatewayProfile, readGatewayHeapProfile } from "../lib/gateway-bench-profile.ts";
 import { buildGatewayBenchChildArgs, createGatewayBenchEnv } from "../lib/gateway-bench-runtime.ts";
 import { createGatewayWsClient } from "../lib/gateway-ws-client.ts";
 import {
@@ -48,8 +50,16 @@ const { values } = parseArgs({
     "cheap-handlers": { type: "boolean", default: false },
     "transcript-reads": { type: "boolean", default: false },
     "sqlite-queues": { type: "boolean", default: false },
+    "transcript-pool": { type: "boolean", default: false },
+    "history-session": { type: "string", default: "agent:main:team-shape-session-64" },
+    cohorts: { type: "string", default: "12" },
+    revision: { type: "string" },
   },
 });
+if (values["transcript-pool"]) {
+  values["transcript-reads"] = true;
+  values["sqlite-queues"] = true;
+}
 if (!values["state-dir"]) {
   throw new Error("--state-dir is required (an offline, generated team-shape fixture)");
 }
@@ -69,8 +79,8 @@ const waveCount = integer(values.waves, "--waves");
 const measurementStartAt = values["start-at"]
   ? integer(values["start-at"], "--start-at")
   : undefined;
-if (measurementStartAt !== undefined && !reconnectWaves) {
-  throw new Error("--start-at requires --reconnect-waves");
+if (measurementStartAt !== undefined && !reconnectWaves && !values["transcript-pool"]) {
+  throw new Error("--start-at requires --reconnect-waves or --transcript-pool");
 }
 if (values["reconnect-count"] !== undefined && !reconnectWaves) {
   throw new Error("--reconnect-count requires --reconnect-waves");
@@ -92,6 +102,11 @@ if (
 const runCount = integer(values.runs, "--runs");
 const durationMs = integer(values.seconds, "--seconds") * 1000;
 const pollMs = integer(values["poll-ms"], "--poll-ms");
+const cohortCount = integer(values.cohorts, "--cohorts");
+const taskWindowMs = values["transcript-pool"] ? durationMs : Math.min(durationMs, 120_000);
+if (values["transcript-pool"] && (durationMs > 1_800_000 || cohortCount * pollMs >= durationMs)) {
+  throw new Error("--transcript-pool requires --seconds <= 1800 and room after its fixed cohorts");
+}
 if (values["worktree-churn"] && durationMs < 180_000) {
   throw new Error(
     "--worktree-churn requires --seconds at least 180 for a separate post-reconnect burst",
@@ -370,6 +385,19 @@ if (isMainThread) {
   }
   const taskCounts = new Map();
   const captureUntil = Number(process.env.OPENCLAW_BENCH_CAPTURE_DEADLINE_MS);
+  ${
+    values["transcript-pool"]
+      ? `const { sampleTrackedWorkerMemory, getTrackedWorkerPoolSnapshot } =
+    await import(${JSON.stringify(new URL("../../src/infra/worker-cpu.ts", import.meta.url).href)});
+  const sampleWorkers = () => {
+    if (Date.now() >= captureUntil) return;
+    process.send?.({ channel: 'post-restart-worker-census', pid: process.pid,
+      at: Date.now(), memory: sampleTrackedWorkerMemory(), pools: getTrackedWorkerPoolSnapshot() });
+  };
+  sampleWorkers();
+  setInterval(sampleWorkers, 1000).unref();`
+      : ""
+  }
   const nativePost = MessagePort.prototype.postMessage;
   MessagePort.prototype.postMessage = function(message, ...args) {
     const body = message?.type === 'post' ? message.value : message;
@@ -438,6 +466,9 @@ let recovering = false;
 let failure: Error | undefined;
 let gateway: ChildProcess | undefined;
 let restartAt = 0;
+let restartWallMs = 0;
+let heapStartedMs: number | undefined;
+let heapStoppedMs: number | undefined;
 let loadStartedAt = Number.POSITIVE_INFINITY;
 let closing = false;
 const children: ChildProcess[] = [];
@@ -454,6 +485,17 @@ type EluSample = {
 const eluSamples: EluSample[] = [];
 const transcriptSnapshot = Promise.withResolvers<Record<string, number>>();
 const sqliteQueueSnapshot = Promise.withResolvers<Record<string, unknown>>();
+const workerCensus: Array<Record<string, unknown>> = [];
+const sharedCohorts: Array<{
+  index: number;
+  scheduledMs: number;
+  startedMs: number;
+  completedMs: number;
+}> = [];
+const heapProfilePath = path.join(output, "transcript-pool.heapprofile");
+let sharedHistoryPage:
+  | { params: Record<string, unknown>; messageCount: number; messagesHash: string }
+  | undefined;
 let githubFixtureRequests = 0;
 let vapidPublicKey: string | undefined;
 let timeToSteadyMs: number | null = null;
@@ -582,6 +624,9 @@ function launch(name: string) {
     "./scripts/tsx.mjs",
     "--import",
     preloadPath,
+    ...(values["transcript-pool"]
+      ? ["--import", "./scripts/lib/gateway-bench-profile-preload.ts"]
+      : []),
   ]);
   const authIndex = args.indexOf("--auth");
   if (authIndex < 0) {
@@ -593,6 +638,7 @@ function launch(name: string) {
   }
   if (recovering) {
     restartAt = performance.now();
+    restartWallMs = Date.now();
   }
   const queueClock =
     recovering && values["sqlite-queues"]
@@ -605,7 +651,7 @@ function launch(name: string) {
     env: {
       ...env,
       ...queueClock,
-      OPENCLAW_BENCH_CAPTURE_DEADLINE_MS: String(Date.now() + Math.min(durationMs, 120_000)),
+      OPENCLAW_BENCH_CAPTURE_DEADLINE_MS: String(Date.now() + taskWindowMs),
     },
     detached: true,
     stdio: ["ignore", "pipe", "pipe", "ipc"],
@@ -631,6 +677,15 @@ function launch(name: string) {
     }
   });
   child.on("message", (sample: unknown) => {
+    if (
+      recovering &&
+      isRecord(sample) &&
+      sample.channel === "post-restart-worker-census" &&
+      sample.pid === child.pid
+    ) {
+      workerCensus.push(sample);
+      return;
+    }
     if (
       recovering &&
       isRecord(sample) &&
@@ -763,7 +818,18 @@ async function rpc(
       method === "chat.history" &&
       (!isRecord(payload) || !Array.isArray(payload.messages) || !payload.messages.length)
     ) {
-      throw new Error("Chat history did not return the interrupted synthetic user turn");
+      throw new Error("Chat history did not return the synthetic fixture messages");
+    }
+    if (
+      method === "chat.history" &&
+      sharedHistoryPage &&
+      isRecord(params) &&
+      params.cursor === sharedHistoryPage.params.cursor &&
+      isRecord(payload) &&
+      createHash("sha256").update(JSON.stringify(payload.messages)).digest("hex") !==
+        sharedHistoryPage.messagesHash
+    ) {
+      throw new Error("Shared history cursor returned a different page after restart");
     }
     if (method === "tools.invoke" && (!isRecord(payload) || payload.ok !== true)) {
       throw new Error("Synthetic memory search did not activate successfully");
@@ -1173,6 +1239,196 @@ const subscriptionParams = (index: number) => ({
   endpoint: `https://push.example.test/post-restart/${cohort}/${index}`,
   keys: { p256dh: "synthetic-browser-p256dh", auth: "synthetic-browser-auth" },
 });
+async function measureRpc(
+  client: ReturnType<typeof createGatewayWsClient>,
+  method: string,
+  params: unknown,
+) {
+  const startedMs = performance.now() - restartAt;
+  try {
+    await rpc(client, method, params);
+    timings.push({ method, startedMs, elapsedMs: performance.now() - restartAt - startedMs });
+  } catch (error) {
+    assertAlive();
+    timings.push({
+      method,
+      startedMs,
+      elapsedMs: performance.now() - restartAt - startedMs,
+      error: String(error),
+    });
+  }
+}
+async function observeTranscriptPool() {
+  const cohortClients: Awaited<ReturnType<typeof connect>>[] = [];
+  for (let offset = 0; offset < clientCount; offset += 30) {
+    cohortClients.push(
+      ...(await Promise.all(
+        Array.from({ length: Math.min(30, clientCount - offset) }, async (_, index) => {
+          const client = await connect(offset + index);
+          connectedClients.add(offset + index);
+          return client;
+        }),
+      )),
+    );
+  }
+  const firstCohortAt = performance.now();
+  for (let index = 0; index < cohortCount; index++) {
+    const scheduledAt = firstCohortAt + index * pollMs;
+    await delay(Math.max(0, scheduledAt - performance.now()));
+    assertAlive();
+    const startedMs = performance.now() - restartAt;
+    await Promise.all(
+      cohortClients.flatMap((client, clientIndex) =>
+        shapes
+          .filter(({ method }) =>
+            method === "tools.invoke"
+              ? index === 0 && clientIndex === 0
+              : method !== "sessions.subscribe" || index === 0,
+          )
+          .map(({ method, params }) =>
+            measureRpc(
+              client,
+              method,
+              method === "push.web.subscribe" ? subscriptionParams(clientIndex) : params,
+            ),
+          ),
+      ),
+    );
+    const completedMs = performance.now() - restartAt;
+    sharedCohorts.push({ index, scheduledMs: scheduledAt - restartAt, startedMs, completedMs });
+    if (completedMs >= durationMs) {
+      throw new Error("Fixed transcript cohorts exceeded the capture window; increase --seconds");
+    }
+  }
+}
+async function prepareSharedHistoryPage(client: ReturnType<typeof createGatewayWsClient>) {
+  const bounds = {
+    sessionKey: values["history-session"],
+    limit: 1,
+    maxChars: 500_000,
+    maxBytes: 512 * 1024,
+  };
+  const tail = await rpc(client, "chat.history", bounds);
+  if (
+    !isRecord(tail) ||
+    !Array.isArray(tail.messages) ||
+    typeof tail.totalMessages !== "number" ||
+    tail.totalMessages < 2
+  ) {
+    throw new Error("--history-session must name a seeded transcript with multiple messages");
+  }
+  const messageId = readChatHistoryMessageId(tail.messages.at(-1));
+  if (!messageId) {
+    throw new Error("Seeded transcript tail has no anchor message ID");
+  }
+  const anchored = await rpc(client, "chat.history", { ...bounds, messageId });
+  if (!isRecord(anchored) || typeof anchored.olderCursor !== "string") {
+    throw new Error(
+      "Seeded transcript has no older page cursor; choose a longer --history-session",
+    );
+  }
+  const params = { ...bounds, cursor: anchored.olderCursor };
+  const page = await rpc(client, "chat.history", params);
+  if (!isRecord(page) || !Array.isArray(page.messages) || page.messages.length === 0) {
+    throw new Error("Seeded transcript cursor returned an empty page");
+  }
+  sharedHistoryPage = {
+    params,
+    messageCount: page.messages.length,
+    messagesHash: createHash("sha256").update(JSON.stringify(page.messages)).digest("hex"),
+  };
+}
+function summarizeTranscriptPool() {
+  const heap = readGatewayHeapProfile(heapProfilePath);
+  const manifest: unknown = JSON.parse(readFileSync(`${heapProfilePath}.workers.json`, "utf8"));
+  if (!isRecord(manifest) || !Array.isArray(manifest.workers)) {
+    throw new Error("Missing worker allocation profile manifest");
+  }
+  const scripts = new Map<number, string>();
+  let transcriptWorkerStarts = 0;
+  for (const sample of workerCensus) {
+    if (!isRecord(sample.memory)) {
+      continue;
+    }
+    if (Array.isArray(sample.memory.workerLifecycle)) {
+      for (const row of sample.memory.workerLifecycle) {
+        if (
+          isRecord(row) &&
+          row.script === "session-transcript.worker.js" &&
+          typeof row.started === "number"
+        ) {
+          transcriptWorkerStarts = Math.max(transcriptWorkerStarts, row.started);
+        }
+      }
+    }
+    for (const rows of [sample.memory.workerHeaps, sample.memory.workerMemoryMissing]) {
+      if (!Array.isArray(rows)) {
+        continue;
+      }
+      for (const row of rows) {
+        if (isRecord(row) && typeof row.threadId === "number" && typeof row.script === "string") {
+          scripts.set(row.threadId, row.script);
+        }
+      }
+    }
+  }
+  const profiles = manifest.workers.map((row: unknown) => {
+    if (!isRecord(row) || typeof row.threadId !== "number" || typeof row.profilePath !== "string") {
+      throw new Error("Worker allocation profile has no thread identity");
+    }
+    return {
+      threadId: row.threadId,
+      script:
+        scripts.get(row.threadId) ?? (typeof row.script === "string" ? row.script : undefined),
+      completed: row.completed === true,
+      error: row.error,
+      profilePath: row.profilePath,
+      sampledAllocatedBytes:
+        row.completed === true
+          ? readGatewayHeapProfile(row.profilePath).sampledAllocatedBytes
+          : null,
+    };
+  });
+  const transcriptWorkers = profiles.filter((row) => row.script === "session-transcript.worker.js");
+  const taskGroups =
+    heap.diagnostics?.groups.filter(
+      (row) =>
+        row.channel === "openclaw.worker.task" && row.operation === "session-transcript.worker.js",
+    ) ?? [];
+  const completedTasks = taskGroups.reduce((sum, row) => sum + row.count, 0);
+  const sampledAllocatedBytes = transcriptWorkers.reduce(
+    (sum, row) => sum + (row.sampledAllocatedBytes ?? 0),
+    0,
+  );
+  const allocationComplete =
+    transcriptWorkers.length > 0 &&
+    transcriptWorkers.length === transcriptWorkerStarts &&
+    transcriptWorkers.every((row) => row.completed) &&
+    heap.diagnostics !== undefined &&
+    heap.diagnostics.collectionErrors === 0 &&
+    heap.diagnostics.droppedEvents === 0 &&
+    heap.diagnostics.droppedHistogramSamples === 0;
+  writeFileSync(path.join(output, "worker-census.json"), JSON.stringify(workerCensus));
+  return {
+    heapStartedMs,
+    heapStoppedMs,
+    sharedHistoryPage,
+    cohorts: sharedCohorts,
+    censusFile: "worker-census.json",
+    profiles,
+    taskGroups,
+    completedTasks,
+    completedTasksPerMinute: heap.diagnostics?.durationMs
+      ? (completedTasks * 60_000) / heap.diagnostics.durationMs
+      : null,
+    sampledAllocatedBytes,
+    allocationComplete,
+    estimatedAllocatedBytesPerCompletedTask:
+      allocationComplete && completedTasks > 0 ? sampledAllocatedBytes / completedTasks : null,
+    boundary:
+      "sampled transcript-worker allocation, including background/startup work, per completed transcript-pool task; not allocation attributed to an individual task kind; retired or unclassified workers make the estimate incomplete",
+  };
+}
 async function observeClient(index: number) {
   const deadline = restartAt + durationMs;
   let client: Awaited<ReturnType<typeof connect>> | undefined;
@@ -1203,29 +1459,13 @@ async function observeClient(index: number) {
             ? firstBatch && index === 0
             : method !== "sessions.subscribe" || firstBatch,
         )
-        .map(async ({ method, params }) => {
-          const startedMs = performance.now() - restartAt;
-          try {
-            await rpc(
-              activeClient,
-              method,
-              method === "push.web.subscribe" ? subscriptionParams(index) : params,
-            );
-            timings.push({
-              method,
-              startedMs,
-              elapsedMs: performance.now() - restartAt - startedMs,
-            });
-          } catch (error) {
-            assertAlive();
-            timings.push({
-              method,
-              startedMs,
-              elapsedMs: performance.now() - restartAt - startedMs,
-              error: String(error),
-            });
-          }
-        }),
+        .map(({ method, params }) =>
+          measureRpc(
+            activeClient,
+            method,
+            method === "push.web.subscribe" ? subscriptionParams(index) : params,
+          ),
+        ),
     );
     firstBatch = false;
     if (client.ws.readyState !== client.ws.OPEN) {
@@ -1596,8 +1836,14 @@ async function measureRestartBurst(
       }
       shapes.push({ method: "workboard.cards.list", params: {} });
     }
+    if (values["transcript-pool"]) {
+      await prepareSharedHistoryPage(sender);
+    }
     shapes.push(
-      { method: "chat.history", params: { sessionKey: keys[0], limit: 50 } },
+      {
+        method: "chat.history",
+        params: sharedHistoryPage?.params ?? { sessionKey: keys[0], limit: 50 },
+      },
       {
         method: "tools.invoke",
         params: {
@@ -1639,6 +1885,14 @@ async function measureRestartBurst(
     );
   }
   activePrimaryHoldsAtCrash = heldResponses.size;
+  if (measurementStartAt !== undefined) {
+    if (Date.now() >= measurementStartAt) {
+      throw new Error("--start-at passed before the held-turn fixture was ready");
+    }
+    console.log(`PHASE waiting-for-paired-restart ${measurementStartAt}`);
+    await delay(measurementStartAt - Date.now());
+    assertAlive();
+  }
   console.log(`PHASE crash ${activePrimaryHoldsAtCrash} held primary requests`);
   expectedExits.add(initial);
   const crashed = new Promise<void>((resolve, reject) => {
@@ -1703,18 +1957,24 @@ async function measureRestartBurst(
   await ready(restarted);
   const readyMs = performance.now() - restartAt;
   console.log(`PHASE restarted-ready ${readyMs.toFixed(1)}ms`);
+  if (values["transcript-pool"]) {
+    await controlGatewayProfile(restarted, "heap", "start", heapProfilePath, {
+      includeWorkers: true,
+    });
+    heapStartedMs = performance.now() - restartAt;
+  }
   loadStartedAt = performance.now();
-  const transcriptMetrics = delay(
-    Math.max(0, Math.min(durationMs, 120_000) - (performance.now() - restartAt)),
-  ).then(async () => {
-    restarted.send({ channel: "post-restart-burst-snapshot" });
-    return await Promise.race([
-      transcriptSnapshot.promise,
-      delay(10_000, undefined, { ref: false }).then(() => {
-        throw new Error("Transcript task snapshot timed out");
-      }),
-    ]);
-  });
+  const transcriptMetrics = delay(Math.max(0, taskWindowMs - (performance.now() - restartAt))).then(
+    async () => {
+      restarted.send({ channel: "post-restart-burst-snapshot" });
+      return await Promise.race([
+        transcriptSnapshot.promise,
+        delay(10_000, undefined, { ref: false }).then(() => {
+          throw new Error("Transcript task snapshot timed out");
+        }),
+      ]);
+    },
+  );
   void transcriptMetrics.catch((error: unknown) => {
     failure ??= error instanceof Error ? error : new Error(String(error));
   });
@@ -1743,25 +2003,40 @@ async function measureRestartBurst(
   });
   const [worktreeChurn] = await Promise.all([
     values["worktree-churn"] ? measureWorktreeChurn() : Promise.resolve(undefined),
-    Promise.all(Array.from({ length: clientCount }, (_, index) => observeClient(index))),
+    values["transcript-pool"]
+      ? observeTranscriptPool()
+      : Promise.all(Array.from({ length: clientCount }, (_, index) => observeClient(index))),
   ]);
   assertAlive();
+  if (values["transcript-pool"]) {
+    await controlGatewayProfile(restarted, "heap", "stop", heapProfilePath);
+    heapStoppedMs = performance.now() - restartAt;
+    // Retain the census through idle retirement after saving active-worker profiles.
+    await delay(Math.max(0, durationMs - (performance.now() - restartAt)));
+  }
   const metrics = await diagnosticMetrics;
   const transcriptTaskCounts = await transcriptMetrics;
   const sqliteQueues = await sqliteQueueMetrics;
   const result = {
     output,
+    revision: values.revision,
     fixture,
     clientCount,
     runCount,
     durationMs,
     pollMs,
+    startAt: measurementStartAt,
+    restartWallMs,
+    transcriptPool: values["transcript-pool"] ? summarizeTranscriptPool() : undefined,
     sqliteQueues,
     worktreeChurn,
     nativeTaskInputs: {
-      windowMs: Math.min(durationMs, 120_000),
+      windowMs: taskWindowMs,
       counts: transcriptTaskCounts,
       total: Object.values(transcriptTaskCounts).reduce((sum, count) => sum + count, 0),
+      perMinute:
+        (Object.values(transcriptTaskCounts).reduce((sum, count) => sum + count, 0) * 60_000) /
+        taskWindowMs,
       boundary:
         "main-isolate native task submissions across all workers; bounded input kind and history request kind only",
       memory: values["transcript-reads"]
@@ -1865,6 +2140,8 @@ async function measureRestartBurst(
     connectedClients.size < clientCount ||
     shapes.some(({ method }) => !timings.some((row) => row.method === method && !row.error)) ||
     (values["cheap-handlers"] && githubFixtureRequests === 0) ||
+    (values["transcript-pool"] &&
+      (timings.some((row) => row.error) || workerCensus.length === 0)) ||
     (sqliteQueues && sqliteQueues.complete !== true) ||
     eluSamples.length === 0
   ) {

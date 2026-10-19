@@ -439,6 +439,63 @@ submission counts include work before the diagnostics exporter starts; queue
 metrics do not. Record the kind breakdown and verify memory catch-up actually
 ran before attributing an improvement to it. Use a fresh fixture for each revision.
 
+Add `--transcript-pool` for a matched transcript-worker workload with an explicit
+worker census and allocation capture:
+
+```sh
+node --import ./scripts/tsx.mjs scripts/perf/post-restart-burst-measure.ts \
+  --state-dir /path/to/team-shape --transcript-pool --clients 16 --runs 8 \
+  --cohorts 12 --poll-ms 5000 --seconds 180 --port 41058 --mock-port 41059 \
+  --start-at <shared-epoch-ms> --revision <commit-sha>
+```
+
+This enables `--transcript-reads` and `--sqlite-queues`. Before the crash, setup
+reads the seeded transcript's newest message, resolves its anchored `olderCursor`,
+and records the older page's message hash. After all clients
+reconnect, each fixed cohort requests that same history cursor concurrently,
+alongside the roster, catalog, projects, and workboard requests. Subscription
+setup runs once per socket and the first client opens the cold memory index once.
+Cohorts use a shared schedule and wait for the preceding cohort to complete;
+request counts do not increase when a revision responds faster. The report keeps
+scheduled, actual-start, and completion times. Any failed RPC or a cohort that
+exceeds the capture window fails the run; every history page must match its
+pre-crash message hash. The default `--history-session` is
+`agent:main:team-shape-session-64`, a shared long transcript for seed 967.
+For another seed, select a transcript with multiple messages using that option;
+setup rejects an empty or unpageable target. The remainder of `--seconds` is idle
+observation. Use `--seconds 420` with the same cohorts to observe the existing
+five-minute idle retirement policy. Captures are capped at 30 minutes.
+
+`--start-at` waits after the initial synthetic turns are held, then triggers the
+owned crash; an already-passed deadline fails. Supply the same future timestamp
+to both sides of a concurrent comparison, separate state directories and ports,
+and swap their 16-core allocations for the next pair. Start far enough ahead to
+allow both initial Gateways to become ready. The report includes the actual
+restart timestamp. Generate fixtures sequentially with 5,000 sessions, 6,000
+retained runs and `--transcript-mib 64` for bounded disk use; check the recorded
+physical database size and host dirty pages before proceeding. This preserves
+inventory shape, but does not reproduce multi-GB database page-cache pressure.
+
+`worker-census.json` contains one-second samples from the existing worker owner:
+pool counts, lifecycle counts, and per-thread heaps with script names, sample
+age, and missing-sample reasons. Native task input counts cover the full restart
+window and report tasks per minute. `transcriptPool.taskGroups` contains the
+existing task diagnostic histograms for queue, preparation, run, transfer, and
+host-wait time; run time includes transport/host work, not just SQLite service.
+The separate SQLite queue report retains its queue/service-occupancy boundary.
+
+The existing private profiler records per-worker allocation profiles and
+100-ms heap/CPU samples through the final cohort, before the idle observation. `transcriptPool` joins profiles to census thread IDs and
+reports sampled allocated bytes per completed transcript-pool task only when
+all relevant profiles completed and worker attribution is available. Retired
+workers can leave incomplete profiles; that estimate is then null. Allocation
+includes newly created worker startup and background work during the recorded profile window,
+so it is an aggregate cost per task, not allocation attributed to each input
+kind. The allocation profile starts after Gateway readiness; task-input, census,
+and queue capture begin in the preload. No transcript content or call stacks are
+added to the numeric census. The bounded fixture exercises real older-page cursor
+reads but does not model a multi-GB individual transcript.
+
 ## Sandbox measurements
 
 Follow the current host policy. On Team, use only a task-owned
