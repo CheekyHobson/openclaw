@@ -22,7 +22,7 @@ import type {
   VideoGenerationProviderPlugin,
   WorkerProvider,
 } from "./capability-provider.types.js";
-import type { CliBackendPlugin, PluginTextTransforms } from "./cli-backend.types.js";
+import type { CliBackendPlugin } from "./cli-backend.types.js";
 import type { PluginConversationBindingResolvedEvent } from "./conversation-binding.types.js";
 import type { PluginGatewayAccessPolicy } from "./gateway-access-policy.types.js";
 import type {
@@ -105,8 +105,6 @@ type ChannelPluginForGatewayVersion<Version extends 1 | 2> = Omit<ChannelPlugin,
 type ChannelRegistrationForGatewayVersion<Version extends 1 | 2> =
   | ChannelPluginForGatewayVersion<Version>
   | OpenClawPluginChannelRegistration<ChannelPluginForGatewayVersion<Version>>;
-
-export type PluginTextTransformRegistration = PluginTextTransforms;
 
 type OpenClawPluginSessionStateApi = {
   /** Register plugin-owned session state projected into Gateway session rows. */

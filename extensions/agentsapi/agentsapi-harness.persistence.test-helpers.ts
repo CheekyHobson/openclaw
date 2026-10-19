@@ -75,7 +75,7 @@ export async function externalSessionFixture(state: { stateDir: string; env: Nod
   };
 }
 
-export function requireAgentsApiHarness(runtime: PluginRuntime) {
+function requireAgentsApiHarness(runtime: PluginRuntime) {
   const registerAgentHarness = vi.fn<OpenClawPluginApi["registerAgentHarness"]>();
   plugin.register(createTestPluginApi({ id: "agentsapi", runtime, registerAgentHarness }));
   const harness = registerAgentHarness.mock.calls[0]?.[0];
