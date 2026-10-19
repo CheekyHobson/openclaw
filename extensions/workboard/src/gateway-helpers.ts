@@ -146,6 +146,7 @@ export function createWorkboardDispatchHandler(params: {
     const model = options.directCard ? normalizeOptionalString(requestParams.model) : undefined;
     const result = await dispatchAndStartWorkboardCards({
       store: params.store,
+      getConfig: () => context.getRuntimeConfig(),
       subagent: params.api.runtime.subagent,
       worktrees: params.api.runtime.worktrees,
       options: {

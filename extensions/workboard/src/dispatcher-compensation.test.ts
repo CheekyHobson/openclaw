@@ -69,6 +69,7 @@ describe("Workboard dispatcher compensation", () => {
 
       const result = await dispatchAndStartWorkboardCards({
         store,
+        getConfig: vi.fn().mockReturnValue({}),
         subagent: { run },
         worktrees,
         options: { now: 10, maxStarts: 1, materializeWorktree: true },

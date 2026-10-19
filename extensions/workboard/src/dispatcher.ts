@@ -11,7 +11,9 @@ import {
   resolveNonNegativeIntegerOption,
 } from "openclaw/plugin-sdk/number-runtime";
 import type { PluginRuntime } from "openclaw/plugin-sdk/plugin-runtime";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { canonicalPathFromExistingAncestor } from "openclaw/plugin-sdk/security-runtime";
+import { replaceArchivedSubagentSession } from "openclaw/plugin-sdk/session-store-runtime";
 import {
   assertRestrictedWorkboardTarget,
   cleanupWorkboardCardWorktree,
@@ -74,6 +76,7 @@ type WorkboardPreparedLaunch = Extract<WorkboardLaunchState, { phase: "prepared"
 
 type WorkboardDispatchStartParams = {
   store: WorkboardStore;
+  getConfig: () => OpenClawConfig;
   subagent: WorkboardSubagentRuntime;
   worktrees?: WorkboardWorktreeRuntime;
   options?: WorkboardDispatchStartOptions;
@@ -362,6 +365,20 @@ async function runWorkboardDispatch(
           await assertCanonicalWorkboardRootAccess(canonicalSourcePath, workspaceAccess);
           await assertRestrictedTarget(canonicalSourcePath);
         }
+      }
+      if (
+        await replaceArchivedSubagentSession({
+          sessionKey,
+          getConfig: params.getConfig,
+          assertCurrent: assertOwnerCurrent,
+        })
+      ) {
+        await params.store.addWorkerLog(card.id, {
+          level: "info",
+          message:
+            "Dispatcher replaced the archived worker session with a fresh session; previous transcript retained.",
+          sessionKey,
+        });
       }
     } catch (error) {
       // A broader caller may retry a host-authorized card; it must never

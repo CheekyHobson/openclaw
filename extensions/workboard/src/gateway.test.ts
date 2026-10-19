@@ -45,13 +45,19 @@ function createGateway({
     },
   } as unknown as OpenClawPluginApi;
   registerWorkboardGatewayMethods({ api, store, sessionsBoard });
+  const config = {};
   const invoke = async (
     name: string,
     params?: Record<string, unknown>,
     context: Record<string, unknown> = {},
   ) => {
     const respond = vi.fn();
-    await methods.get(`workboard.${name}`)!.handler({ params, respond, ...context } as never);
+    await methods.get(`workboard.${name}`)!.handler({
+      params,
+      respond,
+      context: { getRuntimeConfig: () => config },
+      ...context,
+    } as never);
     const [ok, data, error] = respond.mock.calls[0] ?? [];
     return Object.assign(respond, { ok, data, error });
   };
@@ -729,7 +735,7 @@ describe("workboard gateway methods", () => {
       invoke("cards.dispatch", undefined, {
         client: { connect: { scopes: ["operator.write"] } },
         context: {
-          getRuntimeConfig: () => ({
+          getRuntimeConfig: vi.fn().mockReturnValue({
             tools: { fs: { workspaceOnly: true } },
             agents: {
               defaults: {

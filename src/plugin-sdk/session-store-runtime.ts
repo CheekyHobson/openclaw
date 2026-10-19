@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { isMainThread } from "node:worker_threads";
 import {
@@ -28,16 +29,19 @@ import {
   readTranscriptStatsSync as readAccessorTranscriptStatsSync,
   resolveTranscriptSessionKeyBySessionId as resolveAccessorTranscriptSessionKeyBySessionId,
   updateSessionEntry,
+  applySessionEntryLifecycleMutation,
 } from "../config/sessions/session-accessor.js";
 import {
   applySessionEntryOperation,
   updateSessionLastRoute,
   updateSessionLastRouteInScope,
 } from "../config/sessions/session-accessor.sqlite-entry.js";
+import { preserveSqliteSameKeySessionRolloverLineage } from "../config/sessions/session-entry-lineage.js";
 import {
   assertSessionEntryPatchAuthority,
   type SessionEntryPatchAuthority,
 } from "../config/sessions/session-entry-patch-authority.js";
+import { preserveCreationStamp } from "../config/sessions/session-entry-provenance.js";
 import { preserveGenerationPrivateFields } from "../config/sessions/session-entry-public-patch.js";
 import {
   readSessionEntrySummariesInWorker,
@@ -45,17 +49,22 @@ import {
 } from "../config/sessions/session-entry-read-runtime.js";
 import {
   captureExternalSessionCommitGuard,
+  composeSessionSourceAssertion,
+  runWithSessionSourceScope,
   sessionEntryCommitGuardOptions,
 } from "../config/sessions/session-source-authority.js";
 import { resolveSqliteTargetFromSessionStorePath } from "../config/sessions/session-sqlite-target.js";
 import { loadSessionTranscriptEvents } from "../config/sessions/session-transcript-events.js";
 import { readTranscriptStatsAsync as readAccessorTranscriptStatsAsync } from "../config/sessions/session-transcript-stats.js";
+import { resolveSessionWorkStartBlock } from "../config/sessions/session-work-start.js";
 import { normalizeResolvedMaintenanceConfigInput } from "../config/sessions/store-maintenance.js";
 import type { ResolvedSessionMaintenanceConfigInput } from "../config/sessions/store-maintenance.js";
 import type { AmbientTranscriptWatermark, SessionEntry } from "../config/sessions/types.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { resolveSessionStoreIdentity } from "../gateway/session-store-key.js";
 import { hasErrnoCode } from "../infra/errno.js";
 import { warnPluginSdkDeprecation } from "../plugins/sdk-deprecation.js";
-import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
+import { isSubagentSessionKey, resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import {
   getSessionEntryAsync,
   projectPluginSessionEntry,
@@ -87,6 +96,85 @@ const SQLITE_SESSION_STORE_BACKUP_SUFFIXES = ["", "-wal", "-shm", "-journal"] as
 type SessionStoreListParams = Partial<Omit<SessionStoreReadParams, "sessionKey">>;
 
 export type SessionStoreTranscriptEvent = SessionTranscriptEvent;
+
+/** Replace an automation-owned archived subagent incarnation, retaining its transcript lineage. */
+export async function replaceArchivedSubagentSession(params: {
+  sessionKey: string;
+  getConfig: () => OpenClawConfig;
+  assertCurrent?: () => void;
+}): Promise<boolean> {
+  const cfg = params.getConfig();
+  const { agentId, canonicalKey: sessionKey } = resolveSessionStoreIdentity({
+    cfg,
+    sessionKey: params.sessionKey,
+  });
+  if (!isSubagentSessionKey(sessionKey)) {
+    throw new Error("Only automation-owned subagent sessions can be replaced after archival.");
+  }
+  const storePath = resolveSessionStorePathCore(cfg.session?.store, { agentId });
+  const assertCurrent = composeSessionSourceAssertion([params.assertCurrent], (assertSources) => {
+    assertSources();
+    if (params.getConfig() !== cfg) {
+      throw new Error("Session configuration changed before archived worker replacement. Retry.");
+    }
+  });
+  assertCurrent();
+  const entry = await getSessionEntryAsync({ agentId, sessionKey, storePath });
+  assertCurrent();
+  if (entry?.archivedAt === undefined) {
+    return false;
+  }
+  const { runWithInProcessGatewaySessionMutation } =
+    await import("../gateway/server-plugin-in-process-dispatch.js");
+  return await runWithInProcessGatewaySessionMutation(
+    "agent",
+    { sessionKey, agentId },
+    async (assertAuthorized) => {
+      const authority = composeSessionSourceAssertion([assertCurrent, assertAuthorized]);
+      let replaced = false;
+      await applySessionEntryLifecycleMutation({
+        agentId,
+        storePath,
+        activeSessionKey: sessionKey,
+        skipMaintenance: true,
+        withCommit: (run) =>
+          runWithSessionSourceScope(authority, () => run(authority), { checkAfter: false }),
+        upserts: [
+          {
+            sessionKey,
+            buildEntry: ({ currentEntry }) => {
+              authority();
+              if (currentEntry?.archivedAt === undefined) {
+                return undefined;
+              }
+              const block = resolveSessionWorkStartBlock(sessionKey, currentEntry);
+              if (block?.reason !== "archived" || currentEntry.modelSelectionLocked) {
+                throw block ?? new Error("Archived worker session cannot be replaced.");
+              }
+              const now = Date.now();
+              replaced = true;
+              return preserveCreationStamp(
+                preserveSqliteSameKeySessionRolloverLineage({
+                  sessionKey,
+                  previous: currentEntry,
+                  next: {
+                    sessionId: randomUUID(),
+                    lifecycleRevision: randomUUID(),
+                    updatedAt: now,
+                    sessionStartedAt: now,
+                    pluginOwnerId: currentEntry.pluginOwnerId,
+                  },
+                }),
+                currentEntry,
+              );
+            },
+          },
+        ],
+      });
+      return replaced;
+    },
+  );
+}
 
 type SessionStoreEntryUpdate = (
   entry: SessionEntry,

@@ -33,6 +33,7 @@ describe("Workboard dispatcher lifecycle races", () => {
 
     const result = await dispatchAndStartWorkboardCards({
       store,
+      getConfig: vi.fn().mockReturnValue({}),
       subagent: { run },
       options: { maxStarts: 1, boardId: "ops", workspaceAccess: { unrestricted: true } },
     });
@@ -91,6 +92,7 @@ describe("Workboard dispatcher lifecycle races", () => {
 
     const result = await dispatchAndStartWorkboardCards({
       store,
+      getConfig: vi.fn().mockReturnValue({}),
       subagent: { run },
       options: { maxStarts: 1, workspaceAccess: { unrestricted: true } },
     });
@@ -121,6 +123,7 @@ describe("Workboard dispatcher lifecycle races", () => {
     try {
       const result = await dispatchAndStartWorkboardCards({
         store,
+        getConfig: vi.fn().mockReturnValue({}),
         subagent: { run: vi.fn().mockRejectedValue(new Error("model unavailable")) },
         worktrees: {
           resolveCheckoutRoot: vi.fn().mockResolvedValue(undefined),

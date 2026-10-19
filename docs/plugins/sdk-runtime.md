@@ -535,6 +535,18 @@ joins the selected database owner's pending startup preparation before capturing
 its physical identity. Prepared agents do not wait. Failed preparation still
 surfaces through normal database admission checks; Gateway shutdown cancels the wait.
 
+`replaceArchivedSubagentSession({ sessionKey, getConfig, assertCurrent })` from the
+same entrypoint replaces an archived, automation-owned subagent session with a
+fresh incarnation under its canonical key. It returns whether replacement occurred
+and retains the previous transcript and usage lineage. Callers must own the synthetic
+key; this is not a restore operation for human conversations. Replacement requires
+an active Gateway invocation and current authorization to mutate the target session.
+Supply the current config reader and any additional caller authority assertion;
+prepared source capabilities retain their commit scope. Authority and config are
+checked again before commit, and a concurrently changed row is refused. Initialization,
+provider-review, and locked-session restrictions remain in force. Prepare before
+claiming automation work so a refusal cannot consume its retry budget.
+
 ### Memory runtime replacement
 
 Memory runtimes may implement `prepareReload({ retireRuntime, retiringEmbeddingProviders })`

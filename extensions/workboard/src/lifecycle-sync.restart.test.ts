@@ -25,6 +25,7 @@ async function beginPreparedDispatch() {
   });
   const dispatch = dispatchAndStartWorkboardCards({
     store: dispatchStore,
+    getConfig: vi.fn().mockReturnValue({}),
     subagent: { run },
     options: { maxStarts: 1 },
   });

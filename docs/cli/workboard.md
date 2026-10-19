@@ -130,6 +130,11 @@ Selection is conservative. One dispatch starts at most three workers by default.
 
 If worker start fails after a card is claimed, Workboard blocks that card and clears the claim. It records the failure in card execution and worker-log metadata. Failed starts stay visible instead of returning the card to the queue silently.
 
+If the card's automation-owned worker session was archived, dispatch starts a fresh
+session under the same key and records the replacement in the card's worker log.
+The previous transcript remains in session history. Archival alone does not consume
+the card's retry budget. If session preparation is refused, the card stays unclaimed.
+
 The CLI falls back to data-only dispatch against local Workboard state when both of these are true:
 
 - You give no explicit Gateway target.

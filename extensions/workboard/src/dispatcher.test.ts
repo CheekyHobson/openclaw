@@ -38,7 +38,14 @@ describe("dispatchAndStartWorkboardCards", () => {
     run: DispatchParams["subagent"]["run"],
     options: DispatchParams["options"],
     worktrees?: DispatchParams["worktrees"],
-  ) => dispatchAndStartWorkboardCards({ store, subagent: { run }, options, worktrees });
+  ) =>
+    dispatchAndStartWorkboardCards({
+      store,
+      getConfig: vi.fn().mockReturnValue({}),
+      subagent: { run },
+      options,
+      worktrees,
+    });
   const rejectCard = async (
     input: Parameters<WorkboardStore["create"]>[0],
     error: unknown,

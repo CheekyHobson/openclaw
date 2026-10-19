@@ -1,4 +1,8 @@
 import { WORKBOARD_STATUSES, type WorkboardCard } from "@openclaw/workboard-contract";
+import {
+  createRuntimeConfigReader,
+  type OpenClawConfig,
+} from "openclaw/plugin-sdk/runtime-config-snapshot";
 import type { OpenClawPluginApi } from "../api.js";
 import { resolveWorkboardCardByIdOrPrefix } from "./card-lookup.js";
 import type { ResolveAgentWorkspaceRuntime } from "./dispatcher-workspace.js";
@@ -68,6 +72,7 @@ function requireWriteAccess(params: {
 async function handleWorkboardCommand(params: {
   api: Pick<OpenClawPluginApi, "runtime">;
   store: WorkboardStore;
+  getConfig: () => OpenClawConfig;
   args?: string;
   senderIsOwner?: boolean;
   assertOwnerCurrent?: () => void;
@@ -156,6 +161,7 @@ async function handleWorkboardCommand(params: {
     const workspaceAccess = params.workspaceAccess ?? { unrestricted: true };
     const result = await dispatchAndStartWorkboardCards({
       store: params.store,
+      getConfig: params.getConfig,
       subagent: params.api.runtime.subagent,
       worktrees: params.api.runtime.worktrees,
       options: {
@@ -192,6 +198,7 @@ export function registerWorkboardCommand(params: {
       await handleWorkboardCommand({
         api: params.api,
         store: params.store,
+        getConfig: createRuntimeConfigReader(ctx.config),
         args: ctx.args,
         senderIsOwner: ctx.senderIsOwner,
         assertOwnerCurrent: ctx.gatewayClientScopes ? undefined : ctx.assertOwnerCurrent,

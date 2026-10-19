@@ -13,7 +13,12 @@ describe("Workboard dispatcher ownership", () => {
     run = vi.fn();
   });
   const dispatch = (options: Parameters<typeof dispatchAndStartWorkboardCards>[0]["options"]) =>
-    dispatchAndStartWorkboardCards({ store, subagent: { run }, options });
+    dispatchAndStartWorkboardCards({
+      store,
+      getConfig: vi.fn().mockReturnValue({}),
+      subagent: { run },
+      options,
+    });
   const createReady = (input: Parameters<WorkboardStore["create"]>[0]) =>
     store.create({ status: "ready", workspaceAccess: { unrestricted: true }, ...input });
   it("bounds failed worker attempts without draining the ready queue", async () => {

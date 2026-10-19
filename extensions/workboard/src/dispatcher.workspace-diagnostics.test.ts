@@ -50,6 +50,7 @@ describe("Workboard workspace refusal diagnostics", () => {
 
     const result = await dispatchAndStartWorkboardCards({
       store,
+      getConfig: vi.fn().mockReturnValue({}),
       subagent: { run },
       worktrees: {
         resolveCheckoutRoot: vi.fn(),
@@ -83,6 +84,7 @@ describe("Workboard workspace refusal diagnostics", () => {
 
     const result = await dispatchAndStartWorkboardCards({
       store,
+      getConfig: vi.fn().mockReturnValue({}),
       subagent: { run },
       options: {
         maxStarts: 1,
