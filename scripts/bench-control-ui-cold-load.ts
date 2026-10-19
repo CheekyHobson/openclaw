@@ -220,6 +220,7 @@ const { values } = parseArgs({
     "cpu-profile": { type: "boolean", default: false },
     "cpu-profile-compare": { type: "string" },
     "warm-reload": { type: "boolean", default: false },
+    chat: { type: "boolean", default: false },
     "large-snapshot": { type: "boolean", default: false },
     "overlay-probe": { type: "boolean", default: false },
     untraced: { type: "boolean", default: false },
@@ -467,7 +468,11 @@ try {
   await page.addInitScript({
     content: `;(() => { if (window !== window.top) return; const __name = (fn) => fn; (${installWidgetReadiness.toString()})(); ${createControlUiMockGatewayInitScript(prepared.scenario)}\n${rigProbeScript}\nwindow.__teamScaleSidebarLists = { apply: (mutation) => window.__teamScaleMutate(mutation) }; window.openclawControlUiE2eGateway.setRequestHandler("sessions.list", async ({ params, respond }) => respond(await window.__teamScaleList(params))); window.openclawControlUiE2eGateway.setRequestHandler("cron.list", async ({ params, respond }) => respond(await window.__teamScaleCronList(params)));\n${createColdLoadProbeInitScript({ latencyMs, frameGapMs, events: fixture.events, liveEvents: fixture.liveEvents, liveHistory: fixture.liveHistory, ownerProbes: !cpuProfile && !values["session-event-churn"] })}\n${streamingReply ? createStreamingReplyProbeInitScript() : ""}\n${extraInitScripts.join("\n")}\n${warmProbes} })();`,
   });
-  const url = controlUiSessionUrl(server.baseUrl, fixture.selectedSessionKey, "dashboard");
+  const url = controlUiSessionUrl(
+    server.baseUrl,
+    fixture.selectedSessionKey,
+    values.chat ? "chat" : "dashboard",
+  );
   async function settle() {
     try {
       await page.locator(".chat-pane__header").first().waitFor();
@@ -479,21 +484,25 @@ try {
       if (sidebarView === "online") {
         await page.locator('[data-online-user-id="team-person-120"]').waitFor();
       }
-      await page
-        .frameLocator(".board-widget__frame")
-        .frameLocator("iframe")
-        .getByText("Team metric 1", { exact: true })
-        .waitFor();
+      if (!values.chat) {
+        await page
+          .frameLocator(".board-widget__frame")
+          .frameLocator("iframe")
+          .getByText("Team metric 1", { exact: true })
+          .waitFor();
+      }
       await page
         .frameLocator(".chat-tool-card__preview-frame")
         .last()
         .frameLocator("iframe")
         .getByText("Team metric 12", { exact: true })
         .waitFor();
-      await page.waitForFunction(() => {
-        const ready = Reflect.get(window, "__readWidgetReadiness")();
-        return ready.firstBoardReadyMs !== null;
-      });
+      if (!values.chat) {
+        await page.waitForFunction(() => {
+          const ready = Reflect.get(window, "__readWidgetReadiness")();
+          return ready.firstBoardReadyMs !== null;
+        });
+      }
       await page.waitForFunction(
         (eventCount) => {
           const state = Reflect.get(window, "__coldLoad")?.read();
@@ -1084,6 +1093,7 @@ try {
         bundleDir,
         fixture: fixture.counts,
         sidebarView,
+        chat: values.chat,
         streamingReply: values["streaming-reply"],
         sidebarListChurn: values["sidebar-list-churn"],
         sidebarLiveChurn: fixture.sidebarLiveChurn,

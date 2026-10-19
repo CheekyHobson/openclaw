@@ -90,6 +90,17 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
         props.props?.selectedSession?.sessionId,
       ]),
     );
+    // Descriptor hydration may replace the details; the conversation inventory stays owned here.
+    const automations = (
+      <ChatSummaryAutomations
+        gateway={props.props?.pullRequestsGateway}
+        sessionKey={scopedSessionArtifactKey(
+          props.props?.sessionKey ?? "",
+          props.props?.currentAgentId ?? undefined,
+        )}
+        presented={props.presented}
+      />
+    );
     return (
       <Show when={identity()} keyed>
         {(_identity) => {
@@ -303,18 +314,7 @@ export const ChatDetailsSession = defineSolidBridge<Props>(
                     </Show>
                   )}
                 </Show>
-                <ChatSummaryAutomations
-                  gateway={props.props?.pullRequestsGateway}
-                  sessionKey={
-                    props.props
-                      ? scopedSessionArtifactKey(
-                          props.props.sessionKey,
-                          props.props.currentAgentId ?? undefined,
-                        )
-                      : ""
-                  }
-                  presented={active()}
-                />
+                {automations}
               </section>
             </Show>
           );

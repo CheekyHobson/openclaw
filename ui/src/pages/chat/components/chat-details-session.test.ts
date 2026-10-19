@@ -2,7 +2,7 @@
 import { createComponent } from "solid-js";
 import { expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../../../test/helpers/promise.js";
-import type { GatewaySessionRow } from "../../../api/types.ts";
+import type { CronCompactJob, CronJobsListResult, GatewaySessionRow } from "../../../api/types.ts";
 import type { ApplicationGateway } from "../../../app/gateway.ts";
 import { fnv1aUtf16 } from "../../../lib/fnv1a.ts";
 import type { SolidBridgeElement } from "../../../lib/solid-bridge.ts";
@@ -85,6 +85,40 @@ it("omits empty linked-work disclosures and opens arriving pull requests", async
   expect(
     element.querySelector<HTMLDetailsElement>('[data-details-group="pull-requests"]')?.open,
   ).toBe(true);
+});
+it("retains the automation inventory while the session descriptor hydrates", async () => {
+  const inventory: CronJobsListResult<CronCompactJob> = {
+    jobs: [],
+    snapshotRevision: "automation-inventory",
+    total: 0,
+    offset: 0,
+    limit: 50,
+    hasMore: false,
+    nextOffset: null,
+  };
+  const pending = createDeferred<typeof inventory>();
+  const request = createGatewayRequestMock()
+    .mockReturnValueOnce(pending.promise)
+    .mockResolvedValue(inventory);
+  const source = createApplicationGateway({
+    client: createTestGatewayClient(request),
+    phase: "connected",
+    hello: { type: "hello-ok", protocol: 4, auth: { role: "operator", scopes: ["operator.read"] } },
+  });
+  const element = await mount({ pullRequestsGateway: source.gateway });
+  const automations = element.querySelector("openclaw-chat-summary-automations");
+  expect(request).toHaveBeenCalledTimes(1);
+  element.props = {
+    ...element.props!,
+    selectedSession: { ...element.props!.selectedSession!, sessionId: "hydrated-session" },
+  };
+  await element.updateComplete;
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(element.querySelector("openclaw-chat-summary-automations")).toBe(automations);
+  pending.resolve(inventory);
+  await waitForSolid(() => expect(automations?.querySelector('[aria-busy="true"]')).toBeNull());
+  source.publishEvent({ type: "event", event: "cron", payload: { action: "updated" } });
+  await waitForSolid(() => expect(request).toHaveBeenCalledTimes(2));
 });
 it("keeps immutable creator, mutable owner and participants distinct without claiming live presence", async () => {
   const element = await mount({

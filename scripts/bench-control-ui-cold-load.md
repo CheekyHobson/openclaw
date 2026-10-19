@@ -37,6 +37,8 @@ Default reloads use one agent chip; explicit churn scenarios use the all-agent r
 The Online run also requires the saved sidebar view to survive the reload. If it
 returns to Sessions, the run fails instead of reporting Sessions measurements as
 Online measurements.
+`--chat` reloads the same conversation through its chat deep link instead of the dashboard view.
+It retains the shared roster, transcript, plugin, and request-settling checks; only the board-widget readiness check is omitted.
 `--runs` accepts 1–20 reloads. `--output` selects the artifact parent.
 `--bundle-dir` serves an already built production bundle instead of rebuilding it;
 keep its build identity equal to the checkout head. This preserves a baseline
