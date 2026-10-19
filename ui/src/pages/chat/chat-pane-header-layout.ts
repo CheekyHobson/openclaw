@@ -16,7 +16,7 @@ import type { ChatPageHost } from "./chat-state-host.ts";
 import type { ChatProps } from "./chat-view.tsx";
 import type { ChatDetailsProps } from "./components/chat-details-types.ts";
 import type { ChatDetailsElements } from "./components/chat-details.tsx";
-import type { ChatPaneHeaderProps } from "./components/chat-pane-header.tsx";
+import type { ChatPaneHeaderProps } from "./components/chat-pane-header.types.ts";
 import {
   getSessionWorkspace,
   isCurrentSessionWorkspace,
@@ -299,6 +299,7 @@ export abstract class ChatPaneHeaderLayout extends ChatPaneBrowserAnnotationRend
               recovery: chatProps.goalRecovery,
               onGoalAction: chatProps.onGoalAction,
               onGoalSubmit: chatProps.onGoalSubmit,
+              getGoalSubmitError: () => state.chatError,
             },
             pullRequests: this.repository.target
               ? {

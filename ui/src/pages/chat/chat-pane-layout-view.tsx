@@ -14,7 +14,8 @@ import { ChatBoardResetConfirmation } from "./chat-pane-surfaces.tsx";
 import { renderChatTopbarNotices } from "./chat-view-notices.tsx";
 import { ChatView, type ChatProps } from "./chat-view.tsx";
 import { ChatImageLightbox } from "./components/chat-image-lightbox-view.tsx";
-import { PaneHeaderView, type ChatPaneHeaderPresentation } from "./components/chat-pane-header.tsx";
+import { PaneHeaderView } from "./components/chat-pane-header.tsx";
+import type { ChatPaneHeaderPresentation } from "./components/chat-pane-header.types.ts";
 import type { SidebarRegionViewProps } from "./components/chat-sidebar-region-types.ts";
 import {
   ChatSubagentMobileHeader,

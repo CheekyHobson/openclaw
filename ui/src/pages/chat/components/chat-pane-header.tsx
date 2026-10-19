@@ -1,6 +1,5 @@
 import { Show, onSettled, onCleanup, type Element } from "solid-js";
 import { isIncognitoSessionKey } from "../../../../../src/shared/incognito-session-key.js";
-import type { GatewaySessionRow, SessionBranch } from "../../../api/types.ts";
 import { beginNativeWindowDrag } from "../../../app/native-window-drag.ts";
 import { NAV_DRAWER_TOGGLE_REGISTRATION } from "../../../app/navigation-surface.ts";
 import { createRouteElementRef } from "../../../app/route-element-ref.ts";
@@ -8,139 +7,33 @@ import {
   SHELL_NAV_DRAWER_TOGGLE_EVENT,
   type ShellNavDrawerToggleDetail,
 } from "../../../components/command-palette-contract.ts";
-import {
-  canRetryGatewayStatus,
-  type GatewayStatusProps,
-} from "../../../components/gateway-status.ts";
+import { canRetryGatewayStatus } from "../../../components/gateway-status.ts";
 import { StandalonePersonLink } from "../../../components/person-activity-link-solid.tsx";
-import {
-  personActivityLink,
-  type PersonActivityRouting,
-} from "../../../components/person-activity-link.ts";
-import type { SessionPlacementPresentation } from "../../../components/session-placement-move-dialog.tsx";
+import { personActivityLink } from "../../../components/person-activity-link.ts";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { renderSessionOwnerChip } from "../../../components/solid/session-presentation.tsx";
 import { redactLoginFailureError } from "../../../lib/connection-hints.ts";
 import "../../../components/tooltip.ts";
-import type { AgentIdentity } from "../../../lib/identity-avatar-view.ts";
-import type { PresentationValue } from "../../../lib/presentation.ts";
 import { elementRef } from "../../../lib/reactive/element-ref.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { HoverMarquee } from "../../../lib/solid/hover-marquee.tsx";
-import type { ChatMobilePeopleMentions } from "../chat-mobile-people-mentions.ts";
-import type { ChatMobilePeople } from "../chat-mobile-people.ts";
-import {
-  PaneDetails,
-  PaneHeaderPresence,
-  PaneSubagentStop,
-  type PaneDetailsProps,
-} from "../chat-pane-header-view.tsx";
+import { PaneDetails, PaneHeaderPresence, PaneSubagentStop } from "../chat-pane-header-view.tsx";
+
 import { usePanePresentation } from "../chat-pane-presentation.ts";
-import type { PreparedChatSessionSharing } from "../chat-pane-sharing-actions.ts";
 import {
   ChatPanelHeaderActions,
   ChatDashboardMenu,
   ChatPaneLayoutMenu,
-  type ChatPaneLayoutMenuProps,
 } from "./chat-header-panel-actions.tsx";
-import {
-  AgentCrumb,
-  IdentityCrumbs,
-  ProjectCrumb,
-  type ChatPaneParentSession,
-} from "./chat-pane-header-identity.tsx";
+import { AgentCrumb, IdentityCrumbs, ProjectCrumb } from "./chat-pane-header-identity.tsx";
+import type { ChatPaneHeaderPresentation, ChatPaneHeaderProps } from "./chat-pane-header.types.ts";
 import { ChatPaneMobileComposition } from "./chat-pane-mobile-composition.tsx";
 
-import { ChatHeaderSessionMenu } from "./chat-header-session-menu.tsx";
 import { ChatPanePlacement } from "./chat-pane-placement.tsx";
 import { ChatPaneVersionsMenu } from "./chat-pane-versions-menu.tsx";
-import {
-  ChatSessionPublicIndicator,
-  ChatSessionSharing,
-  type ChatSessionSharingProps,
-} from "./chat-session-sharing.solid.tsx";
-import type { ChatSessionVersionsMobileProps } from "./chat-session-versions-mobile.tsx";
-import {
-  ContinueInTerminalDialog,
-  type ContinueInTerminalDialogProps,
-} from "./continue-in-terminal-dialog.tsx";
+import { ChatSessionPublicIndicator, ChatSessionSharing } from "./chat-session-sharing.solid.tsx";
+import { ContinueInTerminalDialog } from "./continue-in-terminal-dialog.tsx";
 
-export type ChatPaneHeaderAction = "reveal" | "copy-path" | "copy-branch";
-
-export type ChatPaneHeaderProps = ChatPaneLayoutMenuProps & {
-  onHeaderRef?: (element: HTMLElement) => void | (() => void);
-  presented: PresentationValue;
-  mergedChrome: boolean;
-  navDrawerOpen?: boolean;
-  gatewayStatus?: GatewayStatusProps | null;
-  title: string;
-  agent?: AgentIdentity & { name: string };
-  titlePending?: boolean;
-  session: GatewaySessionRow | undefined;
-  incognito?: boolean;
-  showOwnerChip?: boolean;
-  ownerViewing?: boolean;
-  personActivity?: PersonActivityRouting;
-  catalog: boolean;
-  catalogColor?: string;
-  editing: boolean;
-  renameValue: string;
-  workspaceRoot: string | null;
-  workspaceLabel: string | null;
-  /** Gateway-resolved project icon for the chip; absent keeps the folder glyph. */
-  workspaceIcon: {
-    routeUrl: string;
-    authTokens: readonly string[];
-    authReady: boolean;
-    connectionId?: string;
-  } | null;
-  parentSession: ChatPaneParentSession | null;
-  branch: string | null;
-  branches: SessionBranch[];
-  branchSwitchDisabledReason: string | null;
-  platform: string | null;
-  canReveal: boolean;
-  copiedAction: ChatPaneHeaderAction | null;
-  renameDisabledReason?: string;
-  runningSubagentCount?: number;
-  dashboardWidgetMenu?: Parameters<typeof ChatDashboardMenu>[0]["widgetMenu"];
-  setDashboardControls?: (action: Element | undefined) => void;
-  panelActionDestinations?: { main: boolean; side: boolean; dashboard: boolean };
-  /** The surrounding desktop frame supplies the Panels toggle. */
-  externalPanelsToggle?: boolean;
-  detailsControl?: PaneDetailsProps;
-  onOpenDetails?: (source: HTMLElement) => void;
-  conversationVisible?: boolean;
-  onToggleConversation?: () => void;
-  runAction?: Parameters<typeof PaneSubagentStop>[0];
-  presence?: Parameters<typeof PaneHeaderPresence>[0];
-  sharingControl?: ChatSessionSharingProps;
-  mobileSharing?: PreparedChatSessionSharing;
-  mobileVersions?: ChatSessionVersionsMobileProps;
-  mobilePeople?: ChatMobilePeople;
-  mobilePeopleMentions?: ChatMobilePeopleMentions;
-  onOpenDashboard?: (source: HTMLElement) => void;
-  publicAccessIndicator?: ChatSessionSharingProps;
-  readMachineName?: () => Promise<string | undefined>;
-  onMobilePlacementStop?: (machineName?: string) => Promise<void>;
-  onMobilePlacementMove?: (presentation: SessionPlacementPresentation) => Promise<void>;
-  placementControl?: Parameters<typeof ChatPanePlacement>[0];
-  sessionMenuAction?: Parameters<typeof ChatHeaderSessionMenu>[0];
-  onBeginRename: () => void;
-  onRenameInput: (value: string) => void;
-  onCommitRename: () => void;
-  onCancelRename: () => void;
-  onMenuOpenChange: (open: boolean) => void;
-  onMenuAction: (action: ChatPaneHeaderAction) => void;
-  onOpenParentSession: (sessionKey: string) => void;
-  onOpenAgentSettings?: (agentId: string) => void;
-  onBranchSelect: (leafEntryId: string) => void;
-};
-
-export type ChatPaneHeaderPresentation = {
-  header: ChatPaneHeaderProps;
-  continueInTerminal?: ContinueInTerminalDialogProps;
-};
 
 export function PaneHeaderView(props: ChatPaneHeaderPresentation) {
   return (
