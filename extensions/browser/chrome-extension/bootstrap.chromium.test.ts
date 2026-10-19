@@ -228,7 +228,14 @@ describe.runIf(runE2E)("Chrome native bootstrap Chromium E2E", () => {
           ...launchFixture,
         };
         const { handleGatewayExtensionUpgrade } = await getGatewayExtensionRelayModule();
-        const gatewayServer = http.createServer((_req, res) => {
+        const gatewayServer = http.createServer((req, res) => {
+          if (req.url === "/browser-owner-proof") {
+            diagnostic.mark("http.request", true);
+            res.once("finish", () => diagnostic.mark("http.finish", res.statusCode));
+            res.writeHead(200, { "content-type": "text/html" });
+            res.end("<title>OpenClaw selected tab</title><h1>OpenClaw created destination</h1>");
+            return;
+          }
           res.writeHead(426);
           res.end();
         });
@@ -245,7 +252,10 @@ describe.runIf(runE2E)("Chrome native bootstrap Chromium E2E", () => {
         cleanups.push(
           async () =>
             await new Promise<void>((resolve) => {
-              gatewayServer.close(() => resolve());
+              gatewayServer.close(() => {
+                diagnostic.mark("http.closed", !gatewayServer.listening);
+                resolve();
+              });
             }),
         );
         cleanups.push(async () => {
@@ -497,38 +507,9 @@ describe.runIf(runE2E)("Chrome native bootstrap Chromium E2E", () => {
         process.stderr.write(
           `[browser-extension-e2e] doctor version match ${chromeExtensionManifest.version}\n`,
         );
-        // Automation fixtures need their own origin; the Gateway hosts human decisions.
-        const proofServer = http.createServer((req, res) => {
-          if (req.url === "/browser-owner-proof") {
-            diagnostic.mark("http.request", true);
-            res.once("finish", () => diagnostic.mark("http.finish", res.statusCode));
-            res.writeHead(200, { "content-type": "text/html" });
-            res.end("<title>OpenClaw selected tab</title><h1>OpenClaw created destination</h1>");
-            return;
-          }
-          res.writeHead(426);
-          res.end();
-        });
-        await new Promise<void>((resolve) => {
-          proofServer.listen(0, "127.0.0.1", resolve);
-        });
-        cleanups.push(
-          async () =>
-            await new Promise<void>((resolve) => {
-              proofServer.close(() => {
-                diagnostic.mark("http.closed", !proofServer.listening);
-                resolve();
-              });
-            }),
-        );
-        const proofAddress = proofServer.address();
-        if (!proofAddress || typeof proofAddress === "string") {
-          throw new Error("Browser proof listener has no TCP address");
-        }
-        const proofUrl = `http://127.0.0.1:${proofAddress.port}/browser-owner-proof`;
         const uploadPage = await context.newPage();
         cleanups.push(async () => await uploadPage.close());
-        await uploadPage.goto(proofUrl);
+        await uploadPage.goto(`http://127.0.0.1:${gatewayPort}/browser-owner-proof`);
         await uploadPage.evaluate(() => {
           const input = document.createElement("input");
           input.type = "file";
@@ -777,6 +758,7 @@ describe.runIf(runE2E)("Chrome native bootstrap Chromium E2E", () => {
         const previousSsrfPolicy = browserState.resolved.ssrfPolicy;
         browserState.resolved.ssrfPolicy = { allowPrivateNetwork: true };
         const extensionCdpUrl = routeContext.forProfile("e2e").profile.cdpUrl;
+        const proofUrl = `http://127.0.0.1:${gatewayPort}/browser-owner-proof`;
         diagnostic.arm(selectedTab.targetId, unrelatedTab.targetId);
         diagnostic.mark("relay.clients", relay.bridge.cdpClientCount);
         const stopPageObservation = diagnostic.watchPage(controlled, proofUrl);
@@ -806,7 +788,7 @@ describe.runIf(runE2E)("Chrome native bootstrap Chromium E2E", () => {
             query: { profile: "e2e" },
             body: {
               targetId: selectedTab.targetId,
-              url: proofUrl,
+              url: `http://127.0.0.1:${gatewayPort}/browser-owner-proof`,
             },
           });
           diagnostic.mark("navigate.status", navigationResponse.status);
@@ -814,7 +796,7 @@ describe.runIf(runE2E)("Chrome native bootstrap Chromium E2E", () => {
           expect(navigationResponse.body).toMatchObject({
             ok: true,
             targetId: selectedTab.targetId,
-            url: proofUrl,
+            url: `http://127.0.0.1:${gatewayPort}/browser-owner-proof`,
           });
           expect(detachedNavigation).toHaveBeenCalledTimes(1);
           const recoveredPage = await getPageForTargetId({
@@ -862,7 +844,7 @@ describe.runIf(runE2E)("Chrome native bootstrap Chromium E2E", () => {
               context,
               extensionPage,
               dispatcher,
-              url: proofUrl,
+              url: `http://127.0.0.1:${gatewayPort}/browser-owner-proof`,
               accessMode,
             });
           }

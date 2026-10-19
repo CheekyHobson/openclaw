@@ -1,8 +1,4 @@
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
-import {
-  clearRuntimeConfigSnapshot,
-  setRuntimeConfigSnapshot,
-} from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { SsrFBlockedError, type LookupFn } from "openclaw/plugin-sdk/security-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -11,23 +7,6 @@ import {
   assertBrowserNavigationResultAllowed,
   InvalidBrowserNavigationUrlError,
 } from "./navigation-guard.js";
-
-// mock-isolation: Pin the local interface independently of the host running CI.
-vi.mock("node:os", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("node:os")>()),
-  networkInterfaces: () => ({
-    fixture: [
-      {
-        address: "192.168.50.10",
-        netmask: "255.255.255.0",
-        family: "IPv4",
-        mac: "00:00:00:00:00:01",
-        internal: false,
-        cidr: "192.168.50.10/24",
-      },
-    ],
-  }),
-}));
 
 function createLookupFn(address: string): LookupFn {
   const family = address.includes(":") ? 6 : 4;
@@ -53,93 +32,12 @@ function redirectChain(...urls: string[]): Request {
 
 describe("browser navigation guard", () => {
   beforeEach(() => {
-    setRuntimeConfigSnapshot({});
-    vi.stubEnv("OPENCLAW_GATEWAY_PORT", "");
     for (const key of PROXY_ENV_KEYS) {
       vi.stubEnv(key, "");
     }
   });
 
-  afterEach(() => {
-    clearRuntimeConfigSnapshot();
-    vi.unstubAllEnvs();
-  });
-
-  it.each([
-    "http://127.0.0.1:18789/approvals",
-    "http://localhost:18789/",
-    "http://[::1]:18789/",
-    "https://control.example/approvals",
-    "https://proxy.example/claw/",
-    "https://remote.example/",
-    "http://192.0.2.10:18789/",
-  ])("blocks its own Control UI origin despite permissive browser policy: %s", async (url) => {
-    setRuntimeConfigSnapshot({
-      gateway: {
-        publicOrigin: "https://control.example",
-        remote: { url: "wss://remote.example" },
-        controlUi: { allowedOrigins: ["https://proxy.example", "*"] },
-        bind: "custom",
-        customBindHost: "192.0.2.10",
-      },
-    });
-    const lookupFn = createLookupFn("192.0.2.10");
-    await expect(
-      assertBrowserNavigationAllowed({
-        url,
-        lookupFn,
-        ssrfPolicy: { dangerouslyAllowPrivateNetwork: true },
-      }),
-    ).rejects.toThrow("cannot access this Gateway's Control UI");
-    expect(lookupFn).not.toHaveBeenCalled();
-  });
-
-  it("keeps other local apps reachable and follows the live Gateway port", async () => {
-    setRuntimeConfigSnapshot({ gateway: { port: 19443 } });
-    const ssrfPolicy = { dangerouslyAllowPrivateNetwork: true };
-    await expect(
-      assertBrowserNavigationAllowed({ url: "http://127.0.0.1:18789/", ssrfPolicy }),
-    ).resolves.toBeUndefined();
-    await expect(
-      assertBrowserNavigationResultAllowed({ url: "http://127.0.0.1:19443/", ssrfPolicy }),
-    ).rejects.toThrow("cannot access this Gateway's Control UI");
-  });
-
-  it.each([
-    { name: "navigation", check: assertBrowserNavigationAllowed },
-    { name: "current tab", check: assertBrowserNavigationResultAllowed },
-  ])(
-    "blocks a local Control UI DNS alias during $name using its existing lookup",
-    async ({ check }) => {
-      setRuntimeConfigSnapshot({
-        gateway: {
-          port: 19443,
-          controlUi: { dangerouslyAllowHostHeaderOriginFallback: true },
-        },
-      });
-      const lookupFn = createLookupFn("192.168.50.10");
-      await expect(
-        check({
-          url: "http://workstation.local:19443/approvals",
-          lookupFn,
-          ssrfPolicy: { dangerouslyAllowPrivateNetwork: true },
-        }),
-      ).rejects.toThrow("cannot access this Gateway's Control UI");
-      expect(lookupFn).toHaveBeenCalledOnce();
-    },
-  );
-
-  it("rechecks the current Control UI origin after an awaited lookup", async () => {
-    const lookup = createDeferred<Awaited<ReturnType<LookupFn>>>();
-    const completion = assertBrowserNavigationAllowed({
-      url: "https://control.example/",
-      lookupFn: () => lookup.promise,
-      ssrfPolicy: { dangerouslyAllowPrivateNetwork: true },
-    });
-    setRuntimeConfigSnapshot({ gateway: { publicOrigin: "https://control.example" } });
-    lookup.resolve([{ address: "192.0.2.10", family: 4 }]);
-    await expect(completion).rejects.toThrow("cannot access this Gateway's Control UI");
-  });
+  afterEach(() => vi.unstubAllEnvs());
 
   it.each([
     ["http://127.0.0.1:8080", SsrFBlockedError],

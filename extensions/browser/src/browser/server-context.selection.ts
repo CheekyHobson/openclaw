@@ -7,7 +7,6 @@ import { appendCdpPath } from "./cdp.js";
 import { getChromeMcpModule } from "./chrome-mcp.runtime.js";
 import type { ResolvedBrowserProfile } from "./config.js";
 import { BrowserTabNotFoundError } from "./errors.js";
-import { assertBrowserControlUiTabAllowed } from "./navigation-guard.js";
 import { getBrowserProfileCapabilities } from "./profile-capabilities.js";
 import { getPwAiModule } from "./pw-ai-module.js";
 import {
@@ -182,7 +181,6 @@ export function createProfileSelectionOps({
     if (!chosen) {
       throw new BrowserTabNotFoundError({ input: targetId ?? stickyTargetId });
     }
-    await assertBrowserControlUiTabAllowed(chosen.url, options);
     runtime.lastTargetId = chosen.targetId;
     return chosen;
   };
@@ -192,9 +190,7 @@ export function createProfileSelectionOps({
     options?: BrowserTabTargetOptions,
   ): Promise<string> => {
     const tabs = await listTabs(options);
-    const tab = resolveBrowserTabOrThrow(targetId, tabs, options?.exactTargetId);
-    await assertBrowserControlUiTabAllowed(tab.url, options);
-    return tab.targetId;
+    return resolveBrowserTabOrThrow(targetId, tabs, options?.exactTargetId).targetId;
   };
 
   const prepareTabOperation = async (
@@ -246,7 +242,6 @@ export function createProfileSelectionOps({
   const focusTab = async (targetId: string, options?: BrowserTabTargetOptions): Promise<void> => {
     const resolvedTargetId = await resolveTargetIdOrThrow(targetId, options);
     const focus = await prepareTabOperation("focus", resolvedTargetId, options);
-    await resolveTargetIdOrThrow(resolvedTargetId, { ...options, exactTargetId: true });
     options?.signal?.throwIfAborted();
     await focus();
     runtime.lastTargetId = resolvedTargetId;
@@ -256,19 +251,10 @@ export function createProfileSelectionOps({
     const resolvedTargetId = await resolveTargetIdOrThrow(targetId, options);
     const close = await prepareTabOperation("close", resolvedTargetId, options);
     options?.signal?.throwIfAborted();
-    await dispatchBrowserTabClose(
-      resolvedTargetId,
-      profile.name,
-      () => {
-        options?.signal?.throwIfAborted();
-        return close();
-      },
-      {
-        assertCurrent: async () => {
-          await resolveTargetIdOrThrow(resolvedTargetId, { ...options, exactTargetId: true });
-        },
-      },
-    );
+    await dispatchBrowserTabClose(resolvedTargetId, profile.name, () => {
+      options?.signal?.throwIfAborted();
+      return close();
+    });
 
     if (runtime.lastTargetId === resolvedTargetId) {
       // Retire only the closed sticky identity; otherwise an unprovable session

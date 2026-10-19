@@ -288,12 +288,11 @@ On macOS, default-on means a paired gateway can drive pointer and keyboard input
 
 ## Safety
 
-OpenClaw hides its native macOS approval panels from Peekaboo screen snapshots and
-refuses native computer input while an approval panel or menu-bar approval is
-pending. Human clicks and **Command-Return** still work. Its browser automation
-also refuses the Gateway's known Control UI origins, including attached Chrome
-tabs. This is hardening, not an isolation boundary: the separate CUA driver and
-third-party automation on the same machine can still operate UI. Do not combine
+OpenClaw hides its native macOS human-approval panels from Peekaboo screen snapshots
+and refuses native computer input while an approval panel or menu-bar approval is
+pending. Human clicks and **Command-Return** still work. These native guards do not
+cover browser automation, the separate CUA driver, or third-party automation on
+the same machine. This is hardening, not an isolation boundary. Do not combine
 ask-mode exec with unrestricted computer use for a model you do not trust.
 
 - Tool policy, local provider enablement, and platform permissions must agree. Node targets also require Gateway command policy, pairing, and node-app settings. On macOS that includes **Allow Computer Control**, Accessibility, and Screen Recording; the native Peekaboo path also requires Event Posting. Actions execute while those durable controls remain enabled; there is no per-action confirmation.

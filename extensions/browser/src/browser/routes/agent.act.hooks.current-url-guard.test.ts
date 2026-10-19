@@ -1,8 +1,4 @@
-import {
-  clearRuntimeConfigSnapshot,
-  setRuntimeConfigSnapshot,
-} from "openclaw/plugin-sdk/runtime-config-snapshot";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectResponse, runRoute } from "./agent-route.test-support.js";
 import { createBrowserRouteApp } from "./test-helpers.js";
 
@@ -111,8 +107,6 @@ const blockedHookCases = [
 ];
 
 describe("agent act hook current URL guard", () => {
-  afterEach(() => clearRuntimeConfigSnapshot());
-
   beforeEach(() => {
     for (const fn of Object.values({ ...mcp, ...pathMocks, ...pwMocks })) {
       fn.mockClear();
@@ -133,30 +127,6 @@ describe("agent act hook current URL guard", () => {
       for (const sideEffect of sideEffects) {
         expect(sideEffect).not.toHaveBeenCalled();
       }
-    },
-  );
-
-  it.each(["openclaw", "extension", "existing-session"] as const)(
-    "refuses approval-like dialog actions on a current Control UI tab through %s",
-    async (driver) => {
-      setRuntimeConfigSnapshot({ gateway: { publicOrigin: "http://127.0.0.1:18789" } });
-      const response = await callHook({
-        path: "/hooks/dialog",
-        body: { accept: true },
-        profileCtx: createProfileContext({ driver, tabUrl: "http://127.0.0.1:18789/approvals" }),
-        allowPrivateNetwork: true,
-      });
-      expectResponse(
-        response,
-        {
-          error:
-            "OpenClaw browser automation cannot access this Gateway's Control UI; ask the user to operate it.",
-          reason: "navigation_blocked",
-        },
-        400,
-      );
-      expect(mcp.evaluateChromeMcpScript).not.toHaveBeenCalled();
-      expect(pwMocks.armDialogViaPlaywright).not.toHaveBeenCalled();
     },
   );
 

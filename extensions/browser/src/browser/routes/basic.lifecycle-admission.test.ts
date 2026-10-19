@@ -1,11 +1,6 @@
-import {
-  clearRuntimeConfigSnapshot,
-  setRuntimeConfigSnapshot,
-} from "openclaw/plugin-sdk/runtime-config-snapshot";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createBrowserRouteContext } from "../server-context.js";
 import { makeBrowserServerState } from "../server-context.test-harness.js";
-import type { BrowserTab } from "../server-context.types.js";
 import { registerBrowserBasicRoutes } from "./basic.js";
 import { createBrowserRouteApp, createBrowserRouteResponse } from "./test-helpers.js";
 import type { BrowserRequest } from "./types.js";
@@ -17,23 +12,17 @@ const profilesService = vi.hoisted(() => ({
 
 vi.mock("../profiles-service.js", () => ({ createBrowserProfilesService: () => profilesService }));
 
-afterEach(() => clearRuntimeConfigSnapshot());
-
 function createLifecycleRoute(path: string) {
   const state = makeBrowserServerState();
   const context = createBrowserRouteContext({ getState: () => state });
   const deleting = path === "DELETE /profiles/:name";
   const mutation = vi.fn();
-  const isHttpReachable = vi.fn(async () => false);
-  const listTabs = vi.fn(async (): Promise<BrowserTab[]> => []);
   profilesService.deleteProfile.mockImplementation(async (name) => {
     mutation();
     return { ok: true, profile: name, deleted: true };
   });
   const profile = {
     ...context.forProfile(),
-    isHttpReachable,
-    listTabs,
     ensureBrowserAvailable: async (options?: { signal?: AbortSignal }) => {
       options?.signal?.throwIfAborted();
       mutation();
@@ -55,8 +44,6 @@ function createLifecycleRoute(path: string) {
   }
   return {
     mutation,
-    isHttpReachable,
-    listTabs,
     call: async (request: Partial<BrowserRequest>) => {
       const response = createBrowserRouteResponse();
       await handler({ params: { name: "work" }, query: {}, ...request }, response.res);
@@ -120,7 +107,7 @@ describe("lifecycle admission", () => {
     },
   );
 
-  it.each(["/reset-profile", "DELETE /profiles/:name"])(
+  it.each(["/stop", "/reset-profile", "DELETE /profiles/:name"])(
     "%s invokes the admitted operation before yielding its authority check",
     async (path) => {
       const route = createLifecycleRoute(path);
@@ -143,76 +130,6 @@ describe("lifecycle admission", () => {
       expect(admittedWithAuthority).toEqual([true]);
     },
   );
-
-  it("refuses an explicit managed stop with a current Control UI tab", async () => {
-    setRuntimeConfigSnapshot({ gateway: { publicOrigin: "https://control.example" } });
-    const route = createLifecycleRoute("/stop");
-    route.isHttpReachable.mockResolvedValue(true);
-    route.listTabs.mockResolvedValue([
-      { targetId: "approval", title: "Approval", url: "https://control.example/approvals" },
-    ]);
-
-    const response = await route.call({});
-
-    expect(response.statusCode).toBe(400);
-    expect(response.body).toMatchObject({
-      error: expect.stringContaining("cannot access this Gateway's Control UI"),
-    });
-    expect(route.mutation).not.toHaveBeenCalled();
-  });
-
-  it.each([false, true])("preserves ordinary stop when browser reachable=%s", async (reachable) => {
-    const route = createLifecycleRoute("/stop");
-    route.isHttpReachable.mockResolvedValue(reachable);
-    route.listTabs.mockResolvedValue([
-      { targetId: "app", title: "Local app", url: "http://127.0.0.1:3000/" },
-    ]);
-
-    const response = await route.call({});
-
-    expect(response.statusCode).toBe(200);
-    expect(route.mutation).toHaveBeenCalledOnce();
-    expect(route.listTabs).toHaveBeenCalledTimes(reachable ? 1 : 0);
-  });
-
-  it("refuses an explicit stop when the Control UI opens during final admission", async () => {
-    setRuntimeConfigSnapshot({ gateway: { publicOrigin: "https://control.example" } });
-    const route = createLifecycleRoute("/stop");
-    route.isHttpReachable.mockResolvedValue(true);
-    let url = "about:blank";
-    route.listTabs.mockImplementation(async () => [{ targetId: "approval", title: "Tab", url }]);
-
-    const response = await route.call({
-      assertCurrent: vi
-        .fn()
-        .mockResolvedValueOnce(undefined)
-        .mockImplementation(async () => {
-          url = "https://control.example/approvals";
-        }),
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(response.body).toMatchObject({
-      error: expect.stringContaining("cannot access this Gateway's Control UI"),
-    });
-    expect(route.mutation).not.toHaveBeenCalled();
-  });
-
-  it("rechecks requester authority after inspecting tabs for an explicit stop", async () => {
-    const route = createLifecycleRoute("/stop");
-    route.isHttpReachable.mockResolvedValue(true);
-    let current = true;
-    route.listTabs.mockImplementation(async () => {
-      current = false;
-      return [];
-    });
-    const response = await route.call({
-      requester: { signal: new AbortController().signal, isCurrent: () => current },
-    });
-
-    expect(response.statusCode).toBe(401);
-    expect(route.mutation).not.toHaveBeenCalled();
-  });
 });
 
 async function callImport(body: unknown, signal?: AbortSignal) {

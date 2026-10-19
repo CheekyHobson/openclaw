@@ -1,8 +1,4 @@
 import { lookup as dnsLookup } from "node:dns";
-import {
-  clearRuntimeConfigSnapshot,
-  setRuntimeConfigSnapshot,
-} from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withBrowserFetchPreconnect } from "../../test-fetch.js";
 import "../test-support/browser-security.mock.js";
@@ -27,13 +23,11 @@ import {
 import * as sessionTabStore from "./session-tab-store.js";
 
 afterEach(async () => {
-  clearRuntimeConfigSnapshot();
   const { closePlaywrightBrowserConnection } = await import("./pw-session.js");
   await closePlaywrightBrowserConnection().catch(() => {});
   globalThis.fetch = originalFetch;
   vi.useRealTimers();
   vi.restoreAllMocks();
-  vi.unstubAllEnvs();
   volatileTabsBySession().delete("agent:main:eviction");
 });
 
@@ -110,14 +104,10 @@ function setup(
   return { state, openclaw, runtime: state.profiles.get("openclaw")!, fetchMock };
 }
 
-function setupManagedTabEviction(
-  closed: string[],
-  cleanup: { resolve: () => void },
-  tabs = () => makeManagedTabsWithNew({ newFirst: true }),
-) {
+function setupManagedTabEviction(closed: string[], cleanup: { resolve: () => void }) {
   return setup(async (url) => {
     if (url.includes("/json/list")) {
-      return Response.json(tabs());
+      return Response.json(makeManagedTabsWithNew({ newFirst: true }));
     }
     if (url.includes("/json/version")) {
       return Response.json({
@@ -159,75 +149,6 @@ async function labeled() {
 }
 
 describe("browser tab selection and ownership", () => {
-  it.each(["focusTab", "closeTab"] as const)(
-    "refuses %s when the selected tab navigates to the Control UI before dispatch",
-    async (operation) => {
-      setRuntimeConfigSnapshot({ gateway: { publicOrigin: "https://control.example" } });
-      let reads = 0;
-      const { openclaw, runtime, fetchMock } = listOnly(() => [
-        page("APPROVAL", reads++ === 0 ? "about:blank" : "https://control.example/approvals"),
-      ]);
-      await expect(openclaw[operation]("APPROVAL")).rejects.toThrow(
-        "cannot access this Gateway's Control UI",
-      );
-      expect(runtime.lastTargetId).toBeNull();
-      expect(fetchMock.mock.calls.every(([url]) => String(url).includes("/json/list"))).toBe(true);
-    },
-  );
-
-  it.each(["ensureTabAvailable", "focusTab", "closeTab"] as const)(
-    "refuses %s on an existing Control UI tab before browser effects",
-    async (operation) => {
-      setRuntimeConfigSnapshot({ gateway: { publicOrigin: "https://control.example" } });
-      const { openclaw, runtime, fetchMock } = listOnly(() => [
-        page("APPROVAL", "https://control.example/approvals"),
-      ]);
-      await expect(openclaw[operation]("APPROVAL")).rejects.toThrow(
-        "cannot access this Gateway's Control UI",
-      );
-      expect(runtime.lastTargetId).toBeNull();
-      expect(fetchMock.mock.calls.every(([url]) => String(url).includes("/json/list"))).toBe(true);
-    },
-  );
-
-  it.each(["ensureTabAvailable", "focusTab", "closeTab"] as const)(
-    "refuses %s on an existing Control UI DNS alias before browser effects",
-    async (operation) => {
-      vi.stubEnv("OPENCLAW_GATEWAY_PORT", "19443");
-      setRuntimeConfigSnapshot({
-        gateway: { port: 19443, bind: "custom", customBindHost: "93.184.216.34" },
-      });
-      const { openclaw, runtime, fetchMock } = listOnly(() => [
-        page("APPROVAL", "http://workstation.local:19443/approvals"),
-      ]);
-      await expect(openclaw[operation]("APPROVAL")).rejects.toThrow(
-        "cannot access this Gateway's Control UI",
-      );
-      expect(runtime.lastTargetId).toBeNull();
-      expect(fetchMock.mock.calls.every(([url]) => String(url).includes("/json/list"))).toBe(true);
-    },
-  );
-
-  it.each(["ensureTabAvailable", "focusTab", "closeTab"] as const)(
-    "keeps %s available for other local apps without applying navigation policy",
-    async (operation) => {
-      vi.stubEnv("OPENCLAW_GATEWAY_PORT", "19443");
-      const { openclaw, state } = setup(async (url) =>
-        url.includes("/json/list")
-          ? Response.json([page("APP", "http://127.0.0.1:19444/")])
-          : new Response(),
-      );
-      state.resolved.ssrfPolicy = { dangerouslyAllowPrivateNetwork: false };
-      await expect(openclaw[operation]("APP")).resolves.toEqual(
-        operation === "ensureTabAvailable"
-          ? expect.objectContaining({ targetId: "APP" })
-          : operation === "closeTab"
-            ? "APP"
-            : undefined,
-      );
-    },
-  );
-
   it("preserves a disappeared sticky alias when a newly discovered tab is blocked", async () => {
     const create = vi
       .spyOn(cdp, "createTargetViaCdp")
@@ -384,34 +305,6 @@ describe("browser tab selection and ownership", () => {
     // recorded activity, so it is evicted even though OLD8 sits last in the
     // CDP listing. Losing the activity read would close OLD8 instead.
     expect(closed).toEqual(["http://127.0.0.1:18800/json/close/OLD2"]);
-  });
-
-  it("skips an eviction candidate that becomes a Control UI tab during ownership preparation", async () => {
-    setRuntimeConfigSnapshot({ gateway: { publicOrigin: "https://control.example" } });
-    let showApproval = false;
-    vi.spyOn(sessionTabStore, "readBrowserDashboardTabs").mockImplementation(async () => {
-      showApproval = true;
-      return [];
-    });
-    mockCreatedTarget("NEW", "http://127.0.0.1:3009");
-    const closed: string[] = [];
-    const cleanup = Promise.withResolvers<void>();
-    const { openclaw, runtime } = setupManagedTabEviction(closed, cleanup, () => {
-      const tabs = makeManagedTabsWithNew({ newFirst: true });
-      for (const tab of tabs) {
-        if (tab.id === "OLD8" && showApproval) {
-          tab.url = "https://control.example/approvals";
-        }
-      }
-      return tabs;
-    });
-    runtime.running = mockLaunchedChrome(vi.fn(), 1234);
-
-    await openclaw.openTab("http://127.0.0.1:3009");
-    await cleanup.promise;
-
-    expect(closed).toEqual(["http://127.0.0.1:18800/json/close/OLD7"]);
-    expect(runtime.lastTargetId).toBe("NEW");
   });
 
   it("evicts untracked managed tabs ahead of recently tracked ones", async () => {
