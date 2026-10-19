@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
+import * as sessionAccessor from "../config/sessions/session-accessor.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import * as sessionRead from "../config/sessions/session-entry-read-runtime.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -7,7 +8,9 @@ import {
   createContext,
   createOperatorClient,
 } from "../gateway/server-plugin-in-process-dispatch.test-support.js";
+import { PluginInstance } from "../plugins/plugin-instance.js";
 import { withPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
+import { createDeferredCore } from "../shared/deferred.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import {
   getSessionEntryAsync,
@@ -55,21 +58,23 @@ it.each([
       const operation =
         caller === "unscoped"
           ? replace()
-          : withPluginRuntimeGatewayRequestScope(
-              {
-                ...(caller === "unidentified" ? {} : { pluginId: "workboard" }),
-                context: createContext([], () => config),
-                isWebchatConnect: () => false,
-                ...(caller === "operator"
-                  ? {
-                      client: createOperatorClient({
-                        profileName: "limited-worker",
-                        scopes: ["operator.write"],
-                      }),
-                    }
-                  : {}),
-              },
-              replace,
+          : new PluginInstance("workboard").run(() =>
+              withPluginRuntimeGatewayRequestScope(
+                {
+                  ...(caller === "unidentified" ? {} : { pluginId: "workboard" }),
+                  context: createContext([], () => config),
+                  isWebchatConnect: () => false,
+                  ...(caller === "operator"
+                    ? {
+                        client: createOperatorClient({
+                          profileName: "limited-worker",
+                          scopes: ["operator.write"],
+                        }),
+                      }
+                    : {}),
+                },
+                replace,
+              ),
             );
       if (caller !== "system" || pluginOwnerId !== "workboard") {
         await expect(operation).rejects.toThrow(
@@ -125,6 +130,77 @@ it.each(["authority", "config"] as const)(
         }),
       ).rejects.toThrow(change === "authority" ? "dispatch owner closed" : "configuration changed");
       expect(pendingRead).toHaveBeenCalled();
+      await expect(getSessionEntryAsync(scope)).resolves.toMatchObject(entry);
+    });
+  },
+);
+
+it.each(["settled", "retired", "aborted"] as const)(
+  "does not replace an archived worker after its plugin invocation is %s",
+  async (lifetime) => {
+    await withOpenClawTestState({ label: "archived-worker-lifetime" }, async () => {
+      const config = { agents: { entries: { main: {} } } };
+      setRuntimeConfigSnapshot(config);
+      const scope = {
+        agentId: "main",
+        sessionKey: "agent:main:subagent:automation-worker",
+        storePath: resolveStorePath(undefined, { agentId: "main" }),
+      };
+      const entry = {
+        sessionId: "archived-worker",
+        updatedAt: Date.now(),
+        archivedAt: 1,
+        pluginOwnerId: "workboard",
+      };
+      await replaceSessionEntry(scope, entry);
+      const instance = new PluginInstance("workboard");
+      const controller = new AbortController();
+      const apply = sessionAccessor.applySessionEntryLifecycleMutation;
+      // Retire or cancel after admission, at the real lifecycle commit boundary.
+      using mutation = vi
+        .spyOn(sessionAccessor, "applySessionEntryLifecycleMutation")
+        .mockImplementationOnce((params) =>
+          apply({
+            ...params,
+            withCommit: (run) => {
+              if (lifetime === "retired") {
+                instance.quiesce();
+              } else {
+                controller.abort(new Error("plugin request cancelled"));
+              }
+              return params.withCommit!(run);
+            },
+          }),
+        );
+      const release = createDeferredCore();
+      let operation: Promise<boolean> | undefined;
+      const invocation = instance.run(() =>
+        withPluginRuntimeGatewayRequestScope(
+          {
+            pluginId: "workboard",
+            context: createContext([], () => config),
+            isWebchatConnect: () => false,
+            signal: controller.signal,
+          },
+          () => {
+            operation = release.promise.then(() =>
+              replaceArchivedSubagentSession({
+                sessionKey: scope.sessionKey,
+                getConfig: () => config,
+              }),
+            );
+            // A detached callback retains async context, but its token has expired.
+            return lifetime === "settled" ? undefined : operation;
+          },
+        ),
+      );
+      release.resolve();
+      await expect(invocation ?? operation).rejects.toThrow(
+        lifetime === "aborted"
+          ? "plugin request cancelled"
+          : "requires an active plugin invocation",
+      );
+      expect(mutation).toHaveBeenCalledTimes(lifetime === "settled" ? 0 : 1);
       await expect(getSessionEntryAsync(scope)).resolves.toMatchObject(entry);
     });
   },

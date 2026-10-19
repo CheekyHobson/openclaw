@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import type { GatewayRequestHandlerOptions } from "../gateway/server-methods/types.js";
 import { createContext } from "../gateway/server-plugin-in-process-dispatch.test-support.js";
 import type { OpenClawPluginApi } from "../plugins/plugin-api.types.js";
+import { PluginInstance } from "../plugins/plugin-instance.js";
 import { withPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { createTestPluginApi } from "./plugin-test-api.js";
@@ -112,20 +113,23 @@ it.each([true, false])(
           string,
           Parameters<OpenClawPluginApi["registerGatewayMethod"]>[1]
         >();
+        const instance = new PluginInstance("workboard");
         registerWorkboardGatewayMethods({
           store,
           api: createTestPluginApi({
             runtime: createPluginRuntimeMock({ subagent: { run } }),
             registerGatewayMethod: (method, handler) => {
               handlers.set(method, (options) =>
-                withPluginRuntimeGatewayRequestScope(
-                  {
-                    pluginId: "workboard",
-                    context: options.context,
-                    client: options.client,
-                    isWebchatConnect: options.isWebchatConnect,
-                  },
-                  () => handler(options),
+                instance.run(() =>
+                  withPluginRuntimeGatewayRequestScope(
+                    {
+                      pluginId: "workboard",
+                      context: options.context,
+                      client: options.client,
+                      isWebchatConnect: options.isWebchatConnect,
+                    },
+                    () => handler(options),
+                  ),
                 ),
               );
             },

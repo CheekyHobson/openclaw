@@ -542,7 +542,9 @@ and retains the previous transcript and usage lineage. Callers must own the synt
 key; this is not a restore operation for human conversations. Replacement requires
 an active plugin request identity and current Gateway authorization to mutate the
 target session. Missing plugin identities are rejected, and the calling plugin must
-match the archived row's plugin owner before replacement.
+match the archived row's plugin owner before replacement. The exact plugin invocation
+must remain active through commit; settled callbacks, retired plugins, and cancelled
+requests cannot replace archived sessions.
 Supply the current config reader and any additional caller authority assertion;
 prepared source capabilities retain their commit scope. Authority and config are
 checked again before commit, and a concurrently changed row is refused. Initialization,

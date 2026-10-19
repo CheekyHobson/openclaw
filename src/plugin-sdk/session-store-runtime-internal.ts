@@ -20,6 +20,8 @@ import type { InternalSessionEntry, SessionEntry } from "../config/sessions/type
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolvePluginSessionOwnershipError } from "../gateway/session-plugin-ownership.js";
 import { resolveSessionStoreIdentity } from "../gateway/session-store-key.js";
+import { pluginInstanceInvocation } from "../plugins/plugin-instance-invocation.js";
+import { hasCurrentPluginInstanceAuthority } from "../plugins/plugin-instance-scope.js";
 import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 
@@ -55,13 +57,28 @@ export async function replaceArchivedSubagentSession(params: {
   if (!pluginId) {
     throw new Error("Archived worker replacement requires an active plugin request identity.");
   }
+  const invocation = pluginInstanceInvocation.getStore();
+  const assertPluginCurrent = () => {
+    if (
+      !invocation ||
+      !pluginInstanceInvocation.run(invocation, () => hasCurrentPluginInstanceAuthority(pluginId))
+    ) {
+      throw new Error("Archived worker replacement requires an active plugin invocation.");
+    }
+    scope?.signal?.throwIfAborted();
+  };
   const { runWithInProcessGatewaySessionMutation } =
     await import("../gateway/server-plugin-in-process-dispatch.js");
+  assertPluginCurrent();
   return await runWithInProcessGatewaySessionMutation(
     "agent",
     { sessionKey, agentId },
     async (assertAuthorized) => {
-      const authority = composeSessionSourceAssertion([assertCurrent, assertAuthorized]);
+      const authority = composeSessionSourceAssertion([
+        assertCurrent,
+        assertAuthorized,
+        assertPluginCurrent,
+      ]);
       let replaced = false;
       await applySessionEntryLifecycleMutation({
         agentId,
