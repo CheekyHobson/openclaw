@@ -202,6 +202,9 @@ export function createSessionRowProjectionFixture(params: {
     async readLookup() {
       throw new Error("Indexed lookup requires a real session row projection");
     },
+    countActiveSessions() {
+      throw new Error("Active counts require a real session row projection");
+    },
     onSelectionChange: revisions.onSelectionChange,
     onFactsChange: revisions.onFactsChange,
     readPreparedRowContext: () => rowContext,

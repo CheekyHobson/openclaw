@@ -1,8 +1,6 @@
+import { getActiveAgentRunContextCount } from "../infra/agent-run-registry.js";
 import { areDiagnosticsEnabledForProcess } from "../infra/diagnostic-events.js";
-import {
-  createGatewayActiveWorkSnapshot,
-  type GatewayActiveWorkInspectors,
-} from "../infra/gateway-active-work.js";
+import type { GatewayActiveWorkInspectors } from "../infra/gateway-active-work.js";
 import { onGatewayWorkMetricsChanged } from "../infra/gateway-work-metrics-events.js";
 import {
   hasGatewayWorkMetricsListeners,
@@ -12,11 +10,9 @@ import {
 import type { SubsystemLogger } from "../logging/subsystem.js";
 import { sessionChanges } from "../sessions/session-row-changes.js";
 import { runInDetachedAsyncContext } from "../shared/detached-async-context.js";
-import { runSynchronousWork } from "../shared/synchronous-work.js";
 import { createGatewayServerActiveWorkInspectors } from "./server-active-work.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";
 import { getSessionRowProjection } from "./session-row-projection-access.js";
-import { prepareProjectedSessionList, selectSessionEntries } from "./session-utils-list.js";
 
 /** Share the server's activity view with maintenance and the lifetime-owned exporter source. */
 export function startGatewayActiveWork(
@@ -39,14 +35,14 @@ export function startGatewayWorkMetrics(params: {
   log: SubsystemLogger;
 }) {
   let stopped = false;
-  let dirty = false;
   let scheduled: ReturnType<typeof setImmediate> | undefined;
-  let pending: Promise<void> | undefined;
   let unsubscribeSessionChanges: (() => void) | undefined;
   publishGatewayWorkMetrics(undefined);
   const needed = () => areDiagnosticsEnabledForProcess() && hasGatewayWorkMetricsListeners();
 
-  const refresh = async () => {
+  let observedProjection: ReturnType<typeof getSessionRowProjection>;
+  let unsubscribeSelection: (() => void) | undefined;
+  const refresh = () => {
     if (!needed()) {
       return;
     }
@@ -54,32 +50,24 @@ export function startGatewayWorkMetrics(params: {
     if (!projection) {
       return;
     }
-    await projection.withSelectionPreparation(async () => {
-      do {
-        await projection.prepareSelection({ yieldForCatalog: true });
-        if (stopped || !needed() || projection !== getSessionRowProjection(params.context)) {
-          return;
-        }
-      } while (projection.needsSelectionPreparation());
-      const { prepared, presentation, filters } = prepareProjectedSessionList({
-        projection,
-        context: params.context,
-        opts: { activeOnly: true, includeGlobal: true, includeUnknown: true },
-        now: Date.now(),
-        metadataPrepared: true,
-      });
-      const selection = runSynchronousWork(selectSessionEntries(filters));
-      const sessions = { running: 0, queued: 0 };
-      for (const [key] of selection.entries) {
-        const target = prepared.getTarget(key)!;
-        const active = presentation.active(target)!;
-        sessions[active.status === "queued" ? "queued" : "running"]++;
-      }
-      const { agentRuns, chatRuns, queuedTurns } = createGatewayActiveWorkSnapshot(
-        params.inspectors,
-      ).counts;
-      publishGatewayWorkMetrics({ sessions, work: { agentRuns, chatRuns, queuedTurns } });
-    });
+    if (observedProjection !== projection) {
+      unsubscribeSelection?.();
+      observedProjection = projection;
+      unsubscribeSelection = projection.onSelectionChange(changed);
+    }
+    const sessions = projection.countActiveSessions(params.context.resolveGatewayContext);
+    publishGatewayWorkMetrics(
+      sessions
+        ? {
+            sessions,
+            work: {
+              agentRuns: (params.inspectors.getAgentRuns ?? getActiveAgentRunContextCount)(),
+              chatRuns: params.inspectors.getChatRuns?.() ?? 0,
+              queuedTurns: params.inspectors.getQueuedTurns?.() ?? 0,
+            },
+          }
+        : undefined,
+    );
   };
   const changed = () => {
     if (stopped) {
@@ -89,7 +77,9 @@ export function startGatewayWorkMetrics(params: {
       if (unsubscribeSessionChanges) {
         unsubscribeSessionChanges();
         unsubscribeSessionChanges = undefined;
-        dirty = false;
+        unsubscribeSelection?.();
+        unsubscribeSelection = undefined;
+        observedProjection = undefined;
         if (scheduled) {
           clearImmediate(scheduled);
           scheduled = undefined;
@@ -99,27 +89,18 @@ export function startGatewayWorkMetrics(params: {
       return;
     }
     unsubscribeSessionChanges ??= sessionChanges.subscribe(changed);
-    dirty = true;
-    if (scheduled || pending) {
+    if (scheduled) {
       return;
     }
     scheduled = runInDetachedAsyncContext(() =>
       setImmediate(() => {
         scheduled = undefined;
-        dirty = false;
-        pending = refresh()
-          .catch((error: unknown) => {
-            if (!stopped) {
-              publishGatewayWorkMetrics(undefined);
-              params.log.warn("Live work metric projection failed", { error });
-            }
-          })
-          .finally(() => {
-            pending = undefined;
-            if (dirty) {
-              changed();
-            }
-          });
+        try {
+          refresh();
+        } catch (error) {
+          publishGatewayWorkMetrics(undefined);
+          params.log.warn("Live work metric projection failed", { error });
+        }
       }),
     );
     scheduled.unref();
@@ -131,6 +112,7 @@ export function startGatewayWorkMetrics(params: {
     stop: async () => {
       stopped = true;
       unsubscribeSessionChanges?.();
+      unsubscribeSelection?.();
       unsubscribeWorkChanges();
       unsubscribeDemand();
       if (scheduled) {
@@ -138,7 +120,6 @@ export function startGatewayWorkMetrics(params: {
         scheduled = undefined;
       }
       publishGatewayWorkMetrics(undefined);
-      await pending;
     },
   };
 }

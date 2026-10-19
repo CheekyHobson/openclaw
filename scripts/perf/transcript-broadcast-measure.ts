@@ -38,6 +38,7 @@ const { values } = parseArgs({
     "state-dir": { type: "string" },
     allocations: { type: "boolean", default: false },
     diagnostics: { type: "boolean", default: false },
+    "active-work-diagnostics": { type: "boolean", default: false },
     scenario: { type: "string", default: "transcript-broadcast" },
     revision: { type: "string" },
     operations: { type: "string" },
@@ -52,6 +53,7 @@ const { values } = parseArgs({
     runs: { type: "string", default: "20" },
     rounds: { type: "string", default: "5" },
     chunks: { type: "string", default: "100" },
+    "chunk-interval-ms": { type: "string", default: "10" },
     "prompt-kib": { type: "string", default: "128" },
     "heap-snapshot": { type: "boolean", default: false },
     "session-row-deltas": { type: "boolean", default: false },
@@ -108,6 +110,7 @@ if (exactClients > clientCount) {
 const runCount = scenario === "chat.send" ? 1 : integer(values.runs, "--runs");
 const rounds = integer(values.rounds, "--rounds");
 const chunkCount = integer(values.chunks, "--chunks");
+const chunkIntervalMs = integer(values["chunk-interval-ms"], "--chunk-interval-ms");
 const listIntervalMs = integer(values["list-interval-ms"], "--list-interval-ms", 0);
 const startAt = values["start-at"] ? integer(values["start-at"], "--start-at") : undefined;
 if (values["session-envelope-refs"] && !values["session-row-deltas"]) {
@@ -147,6 +150,13 @@ cfg.plugins = {
   ...cfg.plugins,
   entries: { "memory-core": { config: { dreaming: { enabled: false } } } },
 };
+if (values["active-work-diagnostics"]) {
+  if (scenario !== "transcript-broadcast") {
+    throw new Error("--active-work-diagnostics requires --scenario transcript-broadcast");
+  }
+  cfg.diagnostics = { ...cfg.diagnostics, enabled: true };
+  cfg.plugins.entries["diagnostics-prometheus"] = { enabled: true };
+}
 let reloadPluginId: string | undefined;
 if (scenario === "plugins.reload") {
   const plugin = writePluginFixtures(output, { count: 1, activationOnStartup: true });
@@ -219,6 +229,25 @@ let toolResults = 0;
 let outputLimitResponses = 0;
 let recoveredResponses = 0;
 let imageRequests = 0;
+let activeWorkCounts: { running: number; queued: number } | undefined;
+async function readActiveWorkCounts() {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const response = await fetch(`http://127.0.0.1:${port}/api/diagnostics/prometheus`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      throw new Error(`active-work metrics scrape failed: HTTP ${response.status}`);
+    }
+    const metrics = await response.text();
+    const running = metrics.match(/^openclaw_sessions_active\{state="running"\} (\d+)$/mu);
+    const queued = metrics.match(/^openclaw_sessions_active\{state="queued"\} (\d+)$/mu);
+    if (running && queued && Number(running[1]) > 0) {
+      return { running: Number(running[1]), queued: Number(queued[1]) };
+    }
+    await delay(100);
+  }
+  throw new Error("active-work exporter did not observe the held primary streams");
+}
 let cohort:
   | {
       id: string;
@@ -326,6 +355,9 @@ const mock = createServer((req, res) => {
         }
         cohort.arrivals.add(index);
         if (cohort.arrivals.size === runCount) {
+          if (values["active-work-diagnostics"]) {
+            activeWorkCounts = await readActiveWorkCounts();
+          }
           cohort.release();
         }
         await cohort.ready;
@@ -396,7 +428,7 @@ const mock = createServer((req, res) => {
         }
         res.write(`data: ${JSON.stringify(event)}\n\n`);
         if ((primary || continuation) && event.type === "response.output_text.delta") {
-          await delay(10);
+          await delay(chunkIntervalMs);
         }
       }
       res.end("data: [DONE]\n\n");
@@ -1109,6 +1141,7 @@ try {
       round,
       scenario,
       allocation,
+      ...(activeWorkCounts ? { activeWorkCounts } : {}),
       diagnostics,
       toolCalls,
       toolResults,
@@ -1183,6 +1216,7 @@ try {
     sessionEnvelopeRefs: values["session-envelope-refs"],
     listIntervalMs,
     diagnostics: values.diagnostics,
+    activeWorkDiagnostics: values["active-work-diagnostics"],
     measurementStartedAt,
     initialFullFrame,
     clientCount,
@@ -1190,6 +1224,7 @@ try {
     activitySummaries: values["activity-summaries"],
     runCount,
     chunks: chunkCount,
+    chunkIntervalMs,
     peakStreams,
     streamRequests,
     fixture,

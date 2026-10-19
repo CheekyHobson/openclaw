@@ -42,6 +42,7 @@ import {
 } from "./session-row-projection-topology.js";
 import { createSessionRowProjectionTranscriptUpdates } from "./session-row-projection-transcript.js";
 import * as rowScope from "./session-row-scope.js";
+import { countActiveSessionRows } from "./session-row-selection.js";
 
 /** Committed publications own invalidation; each admitted physical store is hydrated once. */
 export async function createSessionRowProjection(params: records.ProjectionOptions) {
@@ -62,6 +63,7 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
   const byParent = new Map<string, Set<string>>(),
     byKey = new Map<string, Set<string>>();
   const indexes = { byStore, byAgent, byParent, byKey };
+  const referenced = (ref: string) => records.firstReferenced(ref, rows, byKey, stores.keys());
   const dirty = new Set<string>();
   const recents = createSessionRowRecents({
     rows,
@@ -231,9 +233,6 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
           stores,
           assertCurrent: assertActive,
         });
-  function referenced(ref: string) {
-    return records.firstReferenced(ref, rows, byKey, stores.keys());
-  }
   function enqueue(row: records.Row | undefined) {
     if (row) {
       dirty.add(records.identity(row));
@@ -698,6 +697,10 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
     isCurrent,
     selectEntries,
     projectRecentCandidates: recents.candidates,
+    countActiveSessions: (resolve: Parameters<typeof countActiveSessionRows>[1]) =>
+      disposed || topologyDirty
+        ? undefined
+        : countActiveSessionRows({ cfg, scope, matching, rowContext: metadata.current }, resolve),
     listCreatedActors: (): ReturnType<typeof creators.list> =>
       creators.list(() => projection.state.scope({}).paths, matching),
     snapshot: (query: records.Lookup, options: records.SnapshotOptions = {}) =>

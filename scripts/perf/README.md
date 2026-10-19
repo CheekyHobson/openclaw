@@ -373,6 +373,19 @@ These records contain timing and identity only, never RPC payloads. Gateway
 metrics cover its main isolate, not worker isolates. Capture adds overhead, so
 compare equally instrumented pairs and keep earlier uncaptured runs distinct.
 
+Add `--active-work-diagnostics --allocations` to enable the real Prometheus
+exporter and its active-session metrics demand. The private `--diagnostics`
+observer alone does not activate that work. The driver verifies nonzero running
+session gauges while each primary cohort is held, and records running/queued
+counts with every measured round. For an 80-stream comparison on each 16-core
+half, use `--runs 80 --clients 4 --chunks 80 --chunk-interval-ms 250 --rounds 3`:
+the model emits 80 chunks paced 250 ms apart, then each round drains normally.
+`--chunk-interval-ms` defaults to 10 for existing workloads. Captures include turn
+admission and drain, so report actual duration and normalize allocation/CPU to
+20 seconds and GC to seconds per minute when comparing rates. Keep the same
+fixture, profiler settings and exporter demand on both sides. A 1 MiB transcript
+fixture retains the 5,000-session/6,000-run metadata shape without bulk writes.
+
 `eventBytes` measures the exact received, uncompressed JSON frame bytes,
 including the event envelope, before parsing. `sessionEventSizes` splits session
 frame counts and bytes by the existing bounded reason labels and the fixture's

@@ -542,8 +542,9 @@ active-work snapshot:
 These categories overlap. Do not sum them to obtain a total run or session
 count. They cover session and run activity, not the complete suspension-blocker
 inventory; zero alone does not establish that the Gateway can suspend.
-Both gauges refresh on owner changes while the exporter is active,
-without polling or reading transcripts. They return to zero when the relevant
+Both gauges refresh on owner changes while the exporter is active.
+Session counts use active identities and accepted roster metadata, without
+preparing sidebar rows, reading transcripts, or polling. They return to zero when the relevant
 work drains. Before the Gateway projection is ready, and after it stops, the
 series are absent rather than reporting an assumed idle state.
 

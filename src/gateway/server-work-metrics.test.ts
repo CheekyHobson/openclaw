@@ -38,7 +38,85 @@ import { claimRpcSourceForTest, createRpcSourceForTest } from "./test-helpers.rp
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  setDiagnosticsEnabledForProcess(false);
   resetAgentEventsForTest();
+});
+
+it("keeps alias, sentinel, archive, cron, and hidden-run counts equal to the operator list", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    const context = sessionReads.requestContext({ agents: { entries: { main: {} } } });
+    const storePath = resolveOpenClawAgentSqlitePath({ agentId: "main" });
+    const keys = [
+      "chat",
+      "alias",
+      "queued",
+      "archived",
+      "cron:job:run:tick",
+      "hidden",
+      "global",
+      "unknown",
+    ];
+    const keyFor = (key: string) =>
+      ["global", "unknown"].includes(key) ? key : `agent:main:${key}`;
+    await applySessionEntryCanonicalReplacements({
+      agentId: "main",
+      storePath,
+      sessionKeys: keys.map(keyFor),
+      skipMaintenance: true,
+      update: () => ({
+        replacements: keys.map((key) => ({
+          sessionKey: keyFor(key),
+          previousSessionKeys: [],
+          entry: {
+            sessionId: key === "alias" ? "chat" : key,
+            updatedAt: 1,
+            visibility: "shared" as const,
+            ...(key === "archived" ? { archivedAt: 0 } : {}),
+          },
+        })),
+        result: undefined,
+      }),
+    });
+    await sessionReads.initializeSessionReadContext(context);
+    const projection = getSessionRowProjection(context)!;
+    const claims = keys
+      .filter((key) => key !== "alias")
+      .map((key) => ({
+        key,
+        claim: runRegistry.claimAgentRunContext(
+          key,
+          {
+            agentId: "main",
+            sessionId: key,
+            sessionKey: keyFor(key),
+            projectSessionActive: key !== "hidden",
+          },
+          { trackOwner: true, ownsContext: true },
+        )!,
+      }));
+    const releaseWait = registerAgentRunCapacityWait(
+      "queued",
+      runRegistry.getAgentRunLifecycleGeneration(),
+    );
+    try {
+      const counts = projection.countActiveSessions(context.resolveGatewayContext);
+      expect(counts).toEqual({ running: 4, queued: 1 });
+      const list = await sessionReads.listSessions({
+        client: sharingPolicyClient({ scopes: ["operator.admin"] }),
+        context,
+        request: { activeOnly: true, includeGlobal: true, includeUnknown: true },
+      });
+      expect(counts).toEqual({
+        running: list.sessions.filter((row) => row.status !== "queued").length,
+        queued: list.sessions.filter((row) => row.status === "queued").length,
+      });
+    } finally {
+      releaseWait?.();
+      for (const { key, claim } of claims) {
+        runRegistry.releaseAgentRunContext(key, claim);
+      }
+    }
+  });
 });
 
 it("bounds live projection over idle history through admission, progress, drain, and disposal", async (test) => {
@@ -69,8 +147,8 @@ it("bounds live projection over idle history through admission, progress, drain,
     await sessionReads.initializeSessionReadContext(context);
     const projection = getSessionRowProjection(context)!;
     expect(projection.selectEntries({ sortBy: null }, true)).toHaveLength(514);
-    const prepareOriginal = projection.prepareSelection.bind(projection);
     const prepare = vi.spyOn(projection, "prepareSelection");
+    const select = vi.spyOn(projection, "selectEntries");
     const inspectors = createGatewayServerActiveWorkInspectors({ ...context, cron: {} });
     const inspectedKeys = new Set<string>();
     const createProjector = activeRuns.createVisibleActiveSessionRunProjector;
@@ -150,10 +228,14 @@ it("bounds live projection over idle history through admission, progress, drain,
       work = { agentRuns: 0, chatRuns: 0, queuedTurns: 0 },
     ) => {
       inspectedKeys.clear();
+      prepare.mockClear();
+      select.mockClear();
       await vi.runOnlyPendingTimersAsync();
       const snapshot = await withinTest(next.promise, test.signal);
       next = createDeferredCore<GatewayWorkMetricsSnapshot>();
       expect(snapshot).toEqual({ sessions: { running, queued: queuedSessions }, work });
+      expect(prepare).not.toHaveBeenCalled();
+      expect(select).not.toHaveBeenCalled();
       expect(inspectedKeys.size).toBe(running + queuedSessions);
       const list = await sessionReads.listSessions({
         client,
@@ -244,22 +326,10 @@ it("bounds live projection over idle history through admission, progress, drain,
         subagentRuns.delete(swarm.runId);
       }
 
-      const held = createDeferredCore();
-      prepare.mockImplementationOnce(async (...args) => {
-        await held.promise;
-        await prepareOriginal(...args);
-      });
-      try {
-        notifyGatewayWorkMetricsChanged();
-        await vi.runOnlyPendingTimersAsync();
-        const stopping = source.stop();
-        expect(latest).toBeUndefined();
-        held.resolve();
-        await stopping;
-        expect(latest).toBeUndefined();
-      } finally {
-        held.resolve();
-      }
+      notifyGatewayWorkMetricsChanged();
+      await source.stop();
+      await vi.runOnlyPendingTimersAsync();
+      expect(latest).toBeUndefined();
     } finally {
       unsubscribe();
       await source.stop();

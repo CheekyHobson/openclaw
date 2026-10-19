@@ -54,6 +54,9 @@ export function createSessionRowProjectionRevisions(
   return {
     onSelectionChange(this: void, listener: (change: SelectionChange) => void) {
       selectionListeners.add(listener);
+      return () => {
+        selectionListeners.delete(listener);
+      };
     },
     onFactsChange(this: void, listener: (change: FactsChange) => void) {
       factsListeners.add(listener);

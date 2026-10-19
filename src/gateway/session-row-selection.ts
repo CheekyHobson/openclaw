@@ -3,14 +3,19 @@ import { isConfiguredGatewaySessionEntry } from "../config/sessions/combined-sto
 import { canonicalSessionKeyMigrationRequiredError } from "../config/sessions/session-canonical-key.js";
 import { sessionCreatorProfileId } from "../config/sessions/session-entry-provenance.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { createVisibleActiveSessionRunProjector } from "./server-methods/session-active-runs.js";
 import {
   projectSessionOwner,
   projectSessionParticipants,
   projectSessionProfileInvolvements,
 } from "./session-identity-projection.js";
 import { compareSessionEntryPairs, type SessionEntryPair } from "./session-list-order.js";
+import { tryResolveSessionCompatibilityOwnerAgentId } from "./session-request-agent.js";
 import {
   identity as rowIdentity,
+  selectionRow,
+  type Row,
+  type Query,
   type SelectionRow as SelectionTarget,
   type SelectionChange,
 } from "./session-row-projection-record.js";
@@ -274,6 +279,24 @@ export function createSessionRowSelection(
     change(change: Exclude<SelectionChange, { kind: "reset" }>) {
       update(change.id, keyFor(change), change.row);
     },
+    countActive(project: (row: SelectionTarget) => "running" | "queued" | undefined) {
+      assertCanonical();
+      const counts = { running: 0, queued: 0 };
+      for (const { row } of winners.values()) {
+        if (
+          row.entry.archivedAt !== undefined ||
+          row.selection.isCronRun ||
+          row.selection.isPhantom
+        ) {
+          continue;
+        }
+        const state = project(row);
+        if (state) {
+          counts[state]++;
+        }
+      }
+      return counts;
+    },
     createdEntries(profileIds: ReadonlySet<string>): Iterable<SelectionTarget> {
       assertCanonical();
       const profileOrders = Array.from(profileIds, (profileId) => {
@@ -354,4 +377,50 @@ export function createSessionRowSelection(
       };
     },
   };
+}
+
+/** Count accepted active identities without acquiring display or database facts. */
+export function countActiveSessionRows(
+  owner: {
+    cfg: OpenClawConfig;
+    scope: ReturnType<typeof prepareSessionRowScopes>;
+    matching: (query: Query, kind?: string) => Row[];
+    rowContext: SessionListRowContext;
+  },
+  resolveGatewayContext: Parameters<typeof createVisibleActiveSessionRunProjector>[2],
+) {
+  const { cfg, scope, matching } = owner;
+  const project = createVisibleActiveSessionRunProjector(
+    undefined,
+    undefined,
+    resolveGatewayContext,
+    scope.physicalPaths,
+  );
+  const selection = createSessionRowSelection(cfg, scope.select({}), true, () => owner.rowContext);
+  const keys = new Set<string>();
+  for (const key of project.candidateSessionIdsOrKeys()) {
+    for (const row of [...matching({ key }), ...matching({ key }, "id")]) {
+      keys.add(row.key);
+    }
+  }
+  // Include physical competitors before testing activity, especially sentinel aliases.
+  for (const key of keys) {
+    for (const row of matching({ key })) {
+      const target = selectionRow(row);
+      if (target) {
+        selection.add(target);
+      }
+    }
+  }
+  return selection.countActive((row) => {
+    const active = project({
+      storePath: row.storeTarget.storePath,
+      requestedKey: row.key,
+      canonicalKey: row.key,
+      sessionId: row.entry.sessionId,
+      agentId: row.agentId,
+      defaultAgentId: tryResolveSessionCompatibilityOwnerAgentId(cfg, row.key),
+    });
+    return active.active ? (active.status === "queued" ? "queued" : "running") : undefined;
+  });
 }
