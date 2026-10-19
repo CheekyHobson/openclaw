@@ -1,7 +1,10 @@
 import { isDeepStrictEqual } from "node:util";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { SqliteWorkerStore } from "../../infra/sqlite-worker-contract.js";
-import { hasSqliteWorkerOutcomeUnknown } from "../../infra/sqlite-worker-contract.js";
+import {
+  hasSqliteWorkerOutcomeUnknown,
+  wrapSqliteWorkerError,
+} from "../../infra/sqlite-worker-contract.js";
 import type {
   SqliteWorkerAdmissionRequest,
   SqliteWorkerOperationAdmission,
@@ -261,14 +264,24 @@ export function createSqliteSessionActorExecutor(
               (value) => ({ ok: true as const, value }),
               (error: unknown) => ({ ok: false as const, error }),
             );
-            const unconfirmed = (message: string) =>
-              unknown(
-                reply.ok
-                  ? new Error(message, {
-                      cause: reply.value.kind !== "committed" ? reply.value.error : undefined,
-                    })
-                  : reply.error,
+            const unconfirmed = (message: string, settlementFailure?: unknown) => {
+              const facts = reply.ok ? { message } : errorFacts(reply.error);
+              return unknown(
+                Object.assign(
+                  wrapSqliteWorkerError(
+                    facts.message,
+                    undefined,
+                    reply.ok
+                      ? reply.value.kind !== "committed"
+                        ? reply.value.error
+                        : undefined
+                      : reply.error,
+                    settlementFailure,
+                  ),
+                  facts,
+                ),
               );
+            };
             let result: Outcome;
             if (native) {
               const settled = await native.retained.settled;
@@ -347,7 +360,10 @@ export function createSqliteSessionActorExecutor(
                       ? reply.value
                       : { kind: "rolled-back", error: errorFacts(failure) };
               } else {
-                result = unconfirmed("Unconfirmed actor settlement");
+                result = unconfirmed(
+                  "Unconfirmed actor settlement",
+                  settled.kind !== "completed" ? settled.error : undefined,
+                );
               }
             } else if (reply.ok && reply.value.kind === "rolled-back") {
               result = reply.value;

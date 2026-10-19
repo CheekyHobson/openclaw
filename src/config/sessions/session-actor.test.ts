@@ -733,16 +733,25 @@ it.each([
     "SQLITE_FULL",
     "unknown",
     false,
+    undefined,
   ],
-  [new Error("database or disk is full"), "SQLITE_FULL", "unknown-result", false],
-  [new Error("Ordinary reply lost"), "session_actor_reconciliation", "unknown", false],
+  [new Error("database or disk is full"), "SQLITE_FULL", "unknown-result", false, undefined],
+  [new Error("Ordinary reply lost"), "session_actor_reconciliation", "unknown", false, undefined],
   [
     Object.assign(new Error("database or disk is full"), { errcode: 13 }),
     "SQLITE_FULL",
     "normal",
     true,
+    undefined,
   ],
-] as const)("retains %s (%s, %s)", async (cause, expected, reply, rollback) => {
+  [
+    new Error("Ordinary reply lost"),
+    "SQLITE_FULL",
+    "unknown",
+    false,
+    Object.assign(new Error("database or disk is full during settlement"), { code: "SQLITE_FULL" }),
+  ],
+] as const)("retains %s (%s, %s)", async (cause, expected, reply, rollback, settlementError) => {
   await withActor(async ({ actor, commands, fault }) => {
     const initial = await actor.read(authority);
     if (actor.target.database.kind !== "file") {
@@ -771,6 +780,7 @@ it.each([
     fault.replyError = cause;
     fault.transactionError = rollback ? cause : undefined;
     fault.settlementLost = rollback;
+    fault.settlementError = settlementError;
     const unknown = await actor.patch(
       activity("unknown", 456, { expected: rolledBack.version }),
       authority,
@@ -801,6 +811,9 @@ it.each([
     const diagnostic = formatErrorMessageWithCode(failure);
     expect(diagnostic).toContain("Session actor requires reconciliation before another command");
     expect(diagnostic).toContain(cause.message);
+    if (settlementError) {
+      expect(diagnostic).toContain(settlementError.message);
+    }
     await expect(
       appendSessionManagerActor({
         actor,

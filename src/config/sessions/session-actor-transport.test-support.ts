@@ -32,6 +32,7 @@ type Fault = {
   replyError?: Error;
   transactionError?: Error;
   settlementLost?: boolean;
+  settlementError?: Error;
   workerPublicationFailure?: boolean;
   incompleteOutcomeTransfer?: boolean;
   afterCommitted?: () => Promise<void>;
@@ -162,7 +163,10 @@ function createFixture() {
               admission.service();
               completion.resolve(
                 dropped || fault.settlementLost
-                  ? { kind: "unknown", error: new Error("Native receipt lost") }
+                  ? {
+                      kind: "unknown",
+                      error: fault.settlementError ?? new Error("Native receipt lost"),
+                    }
                   : { kind: "completed" },
               );
             };

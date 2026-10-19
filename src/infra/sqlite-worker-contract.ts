@@ -203,15 +203,18 @@ export class SqliteWorkerError extends Error {
 /** Preserve result and settlement failures when adding a worker diagnostic. */
 export function wrapSqliteWorkerError(
   message: string,
-  code: SqliteWorkerError["code"],
+  code: SqliteWorkerError["code"] | undefined,
   ...causes: unknown[]
-): SqliteWorkerError {
+): Error {
   const retained = causes
     .filter((cause) => cause !== undefined)
     .map((cause) => toErrorObject(cause, message));
-  return Object.assign(new SqliteWorkerError(message, code), {
-    cause: retained.length > 1 ? new AggregateError(retained, message) : retained[0],
-  });
+  return Object.assign(
+    code === undefined ? new Error(message) : new SqliteWorkerError(message, code),
+    {
+      cause: retained.length > 1 ? new AggregateError(retained, message) : retained[0],
+    },
+  );
 }
 
 /** Carry only canonical worker classification through a local cleanup aggregate. */
