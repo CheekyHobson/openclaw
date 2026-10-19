@@ -14,7 +14,11 @@ import { loadCheckoutDiff } from "../../sessions/session-diff.js";
 import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
 import { hasSessionReadAccessChanged } from "../session-sharing-policy.js";
 import { startSlowRequestDiagnostics } from "../slow-request-diagnostics.js";
-import { sessionFileWorkspaceMatches } from "./session-file-read-authority.js";
+import {
+  sessionFileWorkspaceMatches,
+  assertSessionFileReadPolicy,
+  type SessionFileReadPolicyTarget,
+} from "./session-file-read-authority.js";
 import { loadRepositoryArtifactDiff } from "./session-repository-artifacts.js";
 import { resolveRepositoryWorkspaceAccess } from "./session-repository-workspace-access.js";
 import { retainSessionScopedRead } from "./session-scoped-read.js";
@@ -27,6 +31,7 @@ export async function loadSessionDiff(
   context?: GatewayRequestContext,
   assertAuthorized: () => void = () => {},
   diffTiming?: DiffReadTiming,
+  assertWorkspaceRead: (target: SessionFileReadPolicyTarget) => void = () => {},
 ): Promise<SessionsDiffResult> {
   const resolveStarted = diffTiming ? performance.now() : 0;
   let worktreeCount = 0;
@@ -57,6 +62,13 @@ export async function loadSessionDiff(
       const assertCurrent = () => {
         assertSourceCurrent();
         assertAuthorized();
+        if (agentId) {
+          assertWorkspaceRead({
+            ...loaded,
+            agentId,
+            unscopedHostRoot: loaded.fileWorkspace?.unscopedHostRoot,
+          });
+        }
       };
       assertCurrent();
       // Same session scoping as sessions.files.*: an unknown session must not fall
@@ -207,6 +219,7 @@ export const sessionsDiffHandlers: GatewayRequestHandlers = {
         context,
         () => read?.assertCurrent(),
         diffTiming,
+        (target) => assertSessionFileReadPolicy(options, target),
       );
       read?.assertCurrent();
       timing?.mark("send");

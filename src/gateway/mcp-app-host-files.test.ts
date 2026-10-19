@@ -40,7 +40,17 @@ vi.mock("./server-methods/session-scoped-read.js", () => ({
   retainSessionScopedRead: () => undefined,
 }));
 vi.mock("./server-methods/sessions-files.js", () => ({
-  resolveLocalSessionWorkspaceRoot: () => state.root,
+  prepareLocalSessionWorkspaceRoot: async () => {
+    const root = state.root;
+    return {
+      root,
+      assertCurrent: () => {
+        if (root !== state.root) {
+          throw new Error("App file workspace authority changed");
+        }
+      },
+    };
+  },
 }));
 vi.mock("./session-utils.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./session-utils.js")>()),
