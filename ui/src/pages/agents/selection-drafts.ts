@@ -5,8 +5,7 @@ import {
   type AgentFilesState,
   type RetainedAgentFileDrafts,
 } from "./files.ts";
-import { resetIdentityDraft } from "./identity-actions.ts";
-import type { AgentIdentityDraft } from "./panels-overview.tsx";
+import { resetIdentityDraft, type AgentIdentityDraft } from "./identity-actions.ts";
 
 type AgentSelectionDraftHost = AgentFilesState & {
   agentsSelectedId: string | null;

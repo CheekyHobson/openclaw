@@ -198,7 +198,10 @@ it("excludes a profile-qualified primary alias while retaining case-distinct mod
   const target = "custom/model-a";
   const caseDistinct = "custom/Model-A";
   const { field } = renderFallbacks({
-    agentsList: roster({ id: "beta", model: { primary: caseDistinct } }),
+    readData: () => ({
+      ...createProps().readData(),
+      agentsList: roster({ id: "beta", model: { primary: caseDistinct } }),
+    }),
     configForm: agentConfig({
       model: { primary: "fast@work" },
       models: { [target]: { alias: "fast" } },

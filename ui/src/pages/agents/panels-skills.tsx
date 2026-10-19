@@ -16,16 +16,16 @@ import {
   isWorkshopSkill,
 } from "../../lib/skills-shared.ts";
 import { SkillStatusChips } from "../skills/skill-status.tsx";
+import type { AgentsPageView } from "./agents-page-state.ts";
 import { AgentConfigButtons, type AgentConfigActions } from "./config-actions.tsx";
 import { AgentPanelAction } from "./panel-ui.tsx";
-import type { AgentsProps } from "./view.tsx";
 
 registerSettingsEnglish();
 
 export function AgentSkills(
   params: AgentConfigActions &
-    AgentsProps["agentSkills"] &
-    Pick<AgentsProps, "readData"> & {
+    AgentsPageView["agentSkills"] &
+    Pick<AgentsPageView, "readData"> & {
       agentId: string;
       configForm: Record<string, unknown> | null;
       canPatchConfig: boolean;

@@ -22,9 +22,9 @@ import {
   formatNextRun,
 } from "../../lib/presenter.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
+import type { AgentsPageView } from "./agents-page-state.ts";
 import { AgentPanelAction } from "./panel-ui.tsx";
 import { renderAgentContextSection } from "./panels-overview.tsx";
-import type { AgentsProps } from "./view.tsx";
 
 registerEnglishCatalog(registerSettingsEnglish);
 
@@ -82,10 +82,10 @@ function summarizeChannelAccounts(accounts: ChannelAccountSnapshot[]) {
 }
 
 export function AgentChannels(
-  params: AgentsProps["channels"] & {
+  params: AgentsPageView["channels"] & {
     context: AgentContext;
     configForm: Record<string, unknown> | null;
-    readState: AgentsProps["readChannels"];
+    readState: AgentsPageView["readChannels"];
     onSelectPanel: (panel: AgentsPanel) => void;
   },
 ) {
@@ -186,7 +186,7 @@ export function AgentChannels(
 }
 
 export function AgentCron(
-  params: AgentsProps["cron"] & {
+  params: AgentsPageView["cron"] & {
     basePath: string;
     context: AgentContext;
     readState: () => CronState;

@@ -17,7 +17,7 @@ import "../../styles/sidebar-markdown.css";
 import { currentConfigObject } from "../../lib/config/config-state-model.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { ReasonedDisabledControl } from "../plugins/reasoned-disabled-control.tsx";
-import type { createAgentsPageState } from "./agents-page-state.ts";
+import type { AgentsPageView } from "./agents-page-state.ts";
 import { AgentMemoryPanel } from "./memory/memory-panel.tsx";
 import { AgentFiles } from "./panels-files.tsx";
 import { AgentOverview } from "./panels-overview.tsx";
@@ -30,13 +30,12 @@ registerEnglishCatalog(registerPluginManagementEnglish);
 
 const AGENTS_DOCS_URL = "https://docs.openclaw.ai/concepts/multi-agent";
 
-type AgentsOwnerProps = ReturnType<ReturnType<typeof createAgentsPageState>["read"]>;
 export type AgentsProps = Omit<
-  AgentsOwnerProps,
+  AgentsPageView,
   "config" | "overview" | "onOpenMemoryImport" | "onOpenMemorySettings"
 > & {
   config: Pick<
-    AgentsOwnerProps["config"],
+    AgentsPageView["config"],
     | "configForm"
     | "configSnapshot"
     | "configLoading"
@@ -44,10 +43,10 @@ export type AgentsProps = Omit<
     | "configFormDirty"
     | "lastError"
   >;
-  overview: Omit<AgentsOwnerProps["overview"], "modelSelectionPolicy" | "modelCatalogRetired"> &
-    Partial<Pick<AgentsOwnerProps["overview"], "modelSelectionPolicy" | "modelCatalogRetired">>;
-  onOpenMemoryImport?: AgentsOwnerProps["onOpenMemoryImport"];
-  onOpenMemorySettings?: AgentsOwnerProps["onOpenMemorySettings"];
+  overview: Omit<AgentsPageView["overview"], "modelSelectionPolicy" | "modelCatalogRetired"> &
+    Partial<Pick<AgentsPageView["overview"], "modelSelectionPolicy" | "modelCatalogRetired">>;
+  onOpenMemoryImport?: AgentsPageView["onOpenMemoryImport"];
+  onOpenMemorySettings?: AgentsPageView["onOpenMemorySettings"];
 };
 
 export function AgentsPageHeader() {

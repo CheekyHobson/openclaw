@@ -43,23 +43,18 @@ import { projectApplicationConfig } from "../../lib/reactive/application.ts";
 import { useOptionalApplication } from "../../lib/reactive/context.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { projectOwner } from "../../lib/reactive/projection.ts";
+import type { AgentsPageView } from "./agents-page-state.ts";
 import { AvatarPicker } from "./avatar-picker.tsx";
 import { AgentConfigButtons, type AgentConfigActions } from "./config-actions.tsx";
 import { renderAgentPanelFacts } from "./panel-ui.tsx";
-import type { AgentsProps } from "./view.tsx";
 
 registerEnglishCatalog(registerSettingsEnglish);
 
-export type AgentIdentityDraft = {
-  name: string | null;
-  emoji: string | null;
-  avatar: string | null;
-};
-
 export function AgentOverview(
   params: AgentConfigActions &
-    AgentsProps["overview"] &
-    Pick<AgentsProps, "readData"> & {
+    Omit<AgentsPageView["overview"], "modelSelectionPolicy" | "modelCatalogRetired"> &
+    Partial<Pick<AgentsPageView["overview"], "modelSelectionPolicy" | "modelCatalogRetired">> &
+    Pick<AgentsPageView, "readData"> & {
       agent: AgentsListResult["agents"][number];
       defaultId: string | null;
       configForm: Record<string, unknown> | null;

@@ -32,8 +32,6 @@ import {
 } from "./latency.ts";
 import { ConnectionView } from "./view.tsx";
 
-export type ConnectionViewProps = ReturnType<ConnectionDraft["viewProps"]>;
-
 const CONNECTION_DOCS_URL = "https://docs.openclaw.ai/gateway/remote";
 
 class ConnectionDraft {

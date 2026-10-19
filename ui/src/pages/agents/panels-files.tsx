@@ -13,9 +13,9 @@ import { formatRelativeTimestamp } from "../../lib/format.ts";
 import { pathDisplayName } from "../../lib/path-display.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { AgentFilePreview } from "./agent-file-preview.tsx";
+import type { AgentsPageView } from "./agents-page-state.ts";
 import { hasAgentFileContent } from "./files.ts";
 import { AgentPanelAction } from "./panel-ui.tsx";
-import type { AgentsProps } from "./view.tsx";
 
 registerEnglishCatalog(registerSettingsEnglish);
 
@@ -59,8 +59,8 @@ function renderPreviewFact(value: string | number, label: string, secondary = fa
 }
 
 export function AgentFiles(
-  params: AgentsProps["agentFiles"] &
-    Pick<AgentsProps, "readData"> & {
+  params: AgentsPageView["agentFiles"] &
+    Pick<AgentsPageView, "readData"> & {
       agentId: string;
       canWrite: boolean;
     },

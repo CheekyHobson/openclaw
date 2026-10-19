@@ -19,14 +19,14 @@ import { createDefaultUsageDateRange, toggleUsageRangeSelection } from "./helper
 import { createProviderUsageLoader } from "./provider-usage-load.ts";
 import { UsageRefreshPolicy } from "./refresh-policy.ts";
 import { requestUsageSnapshot } from "./request-usage-snapshot.ts";
+import { createUsageDetails } from "./usage-details.ts";
 import type {
   UsageDetailPresentation,
   UsageDisplayState,
   UsageFilterState,
   UsageRouteData,
   UsageSessionEntry,
-} from "./types.ts";
-import { createUsageDetails } from "./usage-details.ts";
+} from "./usage-state-types.ts";
 
 type UsagePresentation = {
   display: Pick<

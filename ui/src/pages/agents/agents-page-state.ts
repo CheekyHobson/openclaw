@@ -60,6 +60,7 @@ import {
   type AgentFilesState,
 } from "./files.ts";
 import {
+  type AgentIdentityDraft,
   resetIdentityDraft,
   saveIdentityDraft,
   selectIdentityAvatar,
@@ -67,7 +68,6 @@ import {
   setIdentityDraftField,
 } from "./identity-actions.ts";
 import type { AgentMemoryTarget } from "./memory/memory-panel-state.ts";
-import type { AgentIdentityDraft } from "./panels-overview.tsx";
 import {
   navigateToAgent,
   navigateToAgentPanel,
@@ -76,8 +76,6 @@ import {
 import type { AgentsRouteData } from "./route.ts";
 import { createAgentSelectionDrafts } from "./selection-drafts.ts";
 import { clearAgentSkillFilter, loadAgentSkills } from "./skills.ts";
-
-type AgentsRequestSources = Partial<Pick<ApplicationContext, "agents" | "agentIdentity">>;
 
 type AgentsPageData = Omit<AgentsState, "agentsLoading" | "agentsError"> &
   AgentFilesState & {
@@ -110,6 +108,8 @@ type AgentsViewData = Omit<
   | "toolsEffectiveLoadingKey"
   | "toolsEffectiveResultKey"
 >;
+export type AgentsPageView = ReturnType<ReturnType<typeof createAgentsPageState>["read"]>;
+
 export function createAgentsPageState(
   context: ApplicationContext,
   initialRouteData?: AgentsRouteData,
@@ -427,7 +427,7 @@ export function createAgentsPageState(
     client: GatewayBrowserClient,
     generation: number,
     agentId: string | undefined,
-    sources: AgentsRequestSources,
+    sources: Partial<Pick<ApplicationContext, "agents" | "agentIdentity">>,
   ): boolean {
     return (
       active &&

@@ -16,10 +16,8 @@ import { useVisiblePoll } from "../../lib/reactive/visible-poll.ts";
 import { resolveScrollBehavior } from "../../lib/scroll-behavior.ts";
 import { createChannelPluginPresentation } from "./plugin-presentation-loader.ts";
 import { ChannelsView, resolveChannelOrder } from "./view.tsx";
-import type { ChannelPairingPrompt } from "./view.types.ts";
+import type { ChannelPairingPrompt, ChannelsProps } from "./view.types.ts";
 import { createChannelSetup } from "./wizard-setup.ts";
-
-export type ChannelsPageProps = ReturnType<ReturnType<typeof createChannelsPage>>;
 
 const CHANNEL_PAIRING_POLL_INTERVAL_MS = 30_000;
 const CHANNELS_DOCS_URL = "https://docs.openclaw.ai/channels";
@@ -61,14 +59,13 @@ function createChannelsPage(context: ApplicationContext) {
     equality: "revision",
   });
 
-  const pluginPresentation: ReturnType<typeof createChannelPluginPresentation> =
-    createChannelPluginPresentation({
-      getContext: () => context,
-      getProps: viewProps,
-      getConnection: () => connection,
-      getChannelIds: () => resolveChannelOrder(channelsProjection.read().channelsSnapshot),
-      isConnected: () => active && context.gateway.snapshot.phase === "connected",
-    });
+  const pluginPresentation = createChannelPluginPresentation({
+    getContext: () => context,
+    getProps: viewProps,
+    getConnection: () => connection,
+    getChannelIds: () => resolveChannelOrder(channelsProjection.read().channelsSnapshot),
+    isConnected: () => active && context.gateway.snapshot.phase === "connected",
+  });
 
   const wizardHost = createChannelSetup({
     getContext: () => context,
@@ -295,7 +292,7 @@ function createChannelsPage(context: ApplicationContext) {
     );
   }
 
-  function viewProps() {
+  function viewProps(): ChannelsProps {
     operationState.read();
     gatewayProjection.read();
     const channels = channelsProjection.read();
@@ -312,32 +309,31 @@ function createChannelsPage(context: ApplicationContext) {
       canManagePairing,
       canAdmin,
       showAdvancedSettings: settings.read(),
-      onPairingRoot: (element: HTMLDivElement) => {
+      onPairingRoot: (element) => {
         pairingRoot = element;
       },
       selectedChannel: selectedChannel(),
       onShowDetail: setSelectedChannel,
       onCloseDetail: () => setSelectedChannel(null),
-      onStartSetup: (channelId: string | null) => {
+      onStartSetup: (channelId) => {
         if (canAdmin && context.gateway.snapshot.phase === "connected") {
           wizardHost.startSetup(channelId);
         }
       },
-      onRefresh: (probe: boolean) => void context.channels.refresh(probe),
+      onRefresh: (probe) => void context.channels.refresh(probe),
       onPairingRefresh: () => void context.channels.refreshPairing(),
       onPairingFilterChange: setPairingFilter,
       onPairingReviewAccount: reviewPairingAccount,
-      onPairingApprove: (request: ChannelsPairingRequest) => openPairingPrompt("approve", request),
-      onPairingDismiss: (request: ChannelsPairingRequest) => openPairingPrompt("dismiss", request),
+      onPairingApprove: (request) => openPairingPrompt("approve", request),
+      onPairingDismiss: (request) => openPairingPrompt("dismiss", request),
       onPairingPromptChange: patchPairingPrompt,
       onPairingPromptCancel: () => updateOperations({ prompt: null }),
       onPairingPromptConfirm: () => void confirmPairingPrompt(),
-      onWhatsAppStart: (force: boolean) =>
+      onWhatsAppStart: (force) =>
         void context.channels.startWhatsApp(force, wizardHost.whatsappAccountId()),
       onWhatsAppWait: () => void context.channels.waitWhatsApp(wizardHost.whatsappAccountId()),
       onShowAdvancedSettings: setShowAdvancedSettings,
-      onConfigPatch: (path: Array<string | number>, value: unknown) =>
-        context.runtimeConfig.patchForm(path, value),
+      onConfigPatch: (path, value) => context.runtimeConfig.patchForm(path, value),
       onConfigSave: () => void saveChannelConfig(),
       onConfigReload: () => void reloadChannelConfig(),
     };

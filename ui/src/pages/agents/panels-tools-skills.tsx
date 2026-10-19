@@ -28,10 +28,10 @@ import {
 import { formatUiExternalText } from "../../lib/format-error.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { resolveScrollBehavior } from "../../lib/scroll-behavior.ts";
+import type { AgentsPageView } from "./agents-page-state.ts";
 import { AgentConfigButtons, type AgentConfigActions } from "./config-actions.tsx";
 import { AgentPanelAction, renderAgentPanelFacts } from "./panel-ui.tsx";
 import { resolveToolAvailability, renderToolPolicyDetails } from "./tool-access-diagnostics.tsx";
-import type { AgentsProps } from "./view.tsx";
 
 registerSettingsEnglish();
 
@@ -115,8 +115,8 @@ function renderEffectiveToolBadge(tool: {
 
 export function AgentTools(
   params: AgentConfigActions &
-    AgentsProps["tools"] &
-    Pick<AgentsProps, "readData"> & {
+    AgentsPageView["tools"] &
+    Pick<AgentsPageView, "readData"> & {
       agentId: string;
       configForm: Record<string, unknown> | null;
     },
