@@ -13,7 +13,12 @@ import {
   type SessionCreateParams,
   type SessionCreateRequestOptions,
 } from "./create.ts";
-import type { SessionPatch, SessionPatchOptions, SessionPatchResult } from "./patch.ts";
+import type {
+  SessionPatch,
+  SessionPatchOptions,
+  SessionPatchOutcome,
+  SessionPatchRoute,
+} from "./patch.ts";
 import { mapSessionResultRows } from "./reconcile.ts";
 import { createSessionArchiveState, projectSessionArchiveFields } from "./session-archive-state.ts";
 import type {
@@ -23,6 +28,7 @@ import type {
   SessionResetOptions,
   SessionResetResult,
 } from "./session-capability.ts";
+import { deferSessionMetadataPatch } from "./session-deferred-metadata.ts";
 import { createSessionModelOverrides } from "./session-model-overrides.ts";
 import {
   createSessionMutationRefresh,
@@ -66,12 +72,18 @@ export function createSessionMutations(host: SessionMutationsHost) {
 
   const optimisticPins = createOptimisticPinPatches(host);
   const optimisticCategories = createOptimisticRowField(host, "category");
+  const metadataFields = {
+    label: createOptimisticRowField(host, "label"),
+    icon: createOptimisticRowField(host, "icon"),
+    color: createOptimisticRowField(host, "color"),
+    category: optimisticCategories,
+  };
   const optimisticUnread = createOptimisticRowField(host, "unread");
   const settingsPatches = createOptimisticSettingsPatches(host);
   const rowPatches = [
     optimisticPins,
     optimisticUnread,
-    optimisticCategories,
+    ...Object.values(metadataFields),
     ...settingsPatches.owners,
   ];
   const hasPendingRowPatches = () => rowPatches.some((owner) => owner.hasPending());
@@ -145,11 +157,11 @@ export function createSessionMutations(host: SessionMutationsHost) {
   const create = async (params: SessionCreateParams = {}, options?: SessionCreateRequestOptions) =>
     (await createResult(params, options))?.key ?? null;
 
-  const patch = async (
+  const patchNow = async (
     key: string,
     patchParams: SessionPatch,
     options: SessionPatchOptions = {},
-  ): Promise<SessionPatchResult | null> => {
+  ): Promise<SessionPatchOutcome | null> => {
     const scope = host.connection.capture();
     if (!scope) {
       return null;
@@ -164,6 +176,8 @@ export function createSessionMutations(host: SessionMutationsHost) {
     const pendingConversation =
       hasSettingsPatch ||
       patchParams.label !== undefined ||
+      patchParams.icon !== undefined ||
+      patchParams.color !== undefined ||
       patchParams.category !== undefined ||
       patchParams.pinned !== undefined ||
       patchParams.unread === false ||
@@ -200,7 +214,19 @@ export function createSessionMutations(host: SessionMutationsHost) {
     let pinPatchToken: symbol | null = null;
     let unreadPatchToken: symbol | null = null;
     let categoryPatchToken: symbol | null = null;
+    const displayClaims: Array<readonly [typeof optimisticCategories, symbol | null]> = [];
     const startOptimisticPatch = () => {
+      if (displayClaims.length === 0 && pendingTarget) {
+        for (const field of ["label", "icon", "color"] as const) {
+          if (patchParams[field] !== undefined) {
+            const owner = metadataFields[field];
+            displayClaims.push([
+              owner,
+              owner.prepare(() => patchParams[field]?.trim() || undefined)(pendingTarget),
+            ]);
+          }
+        }
+      }
       if (patchParams.category !== undefined && !categoryPatchToken && pendingTarget) {
         categoryPatchToken = optimisticCategories.prepare(
           () => patchParams.category?.trim() || undefined,
@@ -240,6 +266,7 @@ export function createSessionMutations(host: SessionMutationsHost) {
             [optimisticPins, pinPatchToken],
             [optimisticUnread, unreadPatchToken],
             [optimisticCategories, categoryPatchToken],
+            ...displayClaims,
           ],
         ],
         ...settingsPatchClaims,
@@ -453,6 +480,10 @@ export function createSessionMutations(host: SessionMutationsHost) {
     }
   };
 
+  const patch: SessionPatchRoute = async (key, patchParams, options = {}) =>
+    deferSessionMetadataPatch(host, metadataFields, patchNow, key, patchParams, options) ??
+    patchNow(key, patchParams, options);
+
   const patchMany = async (
     targets: SessionsPatchManyParams["targets"],
     patchParams: SessionsPatchManyParams["patch"],
@@ -648,11 +679,19 @@ export function createSessionMutations(host: SessionMutationsHost) {
         }
       }
     },
-    retireConnection() {
-      dispose();
-      // Row intents live inside `result`, which the replacement connection
-      // rehydrates wholesale; only the model-override side map outlives that
-      // replacement, so it is the one that needs an explicit rollback below.
+    retireConnection(retainMetadata = false) {
+      modelOverrides.clear();
+      for (const owner of rowPatches) {
+        if (
+          !retainMetadata ||
+          !Object.values(metadataFields).some((metadata) => metadata === owner)
+        ) {
+          owner.clear();
+        }
+      }
+      archiveState.clearAll();
+      preparedWorkSessionKeys.clear();
+      // Same-owner reconnect keeps queued metadata over the retained presentation.
       const state = host.readState();
       host.publish({ ...state, modelOverrides: {} });
     },
