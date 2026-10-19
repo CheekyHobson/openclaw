@@ -245,6 +245,7 @@ export function resolveVisibleActiveSessionRunState(
           resolvedAgentId,
           params.defaultAgentId,
         )));
+  const matchesGateway = captureGatewayScopeMatcher(params.resolveGatewayContext);
   const matchingTrackedRuns = collectTrackedActiveSessionRuns(
     params.includeTerminalPersistence,
     {
@@ -253,7 +254,7 @@ export function resolveVisibleActiveSessionRunState(
       sessionId,
     },
     params.selectedRpcSources,
-    captureGatewayScopeMatcher(params.resolveGatewayContext),
+    matchesGateway,
     params.physicalPaths,
   ).filter(matchesRequestedSession);
   const hasTerminalPersistence = matchingTrackedRuns.some((active) => active.terminalPersistence);
@@ -299,7 +300,6 @@ export function resolveVisibleActiveSessionRunState(
     ...(params.projectedAgentRunIndex ? { index: params.projectedAgentRunIndex } : {}),
   });
   const localResolution = sessionId ? resolveReplyRunForCurrentSessionId(sessionId) : undefined;
-  const matchesGateway = captureGatewayScopeMatcher(params.resolveGatewayContext);
   const localOperations = (
     localResolution?.kind === "one"
       ? [localResolution.operation]
