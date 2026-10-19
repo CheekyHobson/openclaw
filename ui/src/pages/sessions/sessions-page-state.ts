@@ -35,6 +35,7 @@ import {
   sessionPullRequestsForGateway,
 } from "../../lib/session-pull-requests.ts";
 import { resolveSessionRenamePatch, resolveSessionRenameValue } from "../../lib/session-rename.ts";
+import type { SessionsGroupBy } from "../../lib/sessions/grouping.ts";
 import {
   SESSIONS_PAGE_DEFAULT_LIMIT,
   filterSessionRows,
@@ -43,7 +44,7 @@ import {
   type SessionListSnapshot,
 } from "../../lib/sessions/index.ts";
 import { fetchPagedSessionRows } from "../../lib/sessions/paged-session-rows.ts";
-import type { SessionPatchResult } from "../../lib/sessions/patch.ts";
+import type { SessionPatch, SessionPatchResult } from "../../lib/sessions/patch.ts";
 import {
   resolveSessionPreferredFaceForKey,
   resolveSessionNavigationAgentId,
@@ -66,7 +67,7 @@ import { rememberSessionCustomGroup, sessionCategoryNames } from "./custom-group
 import { resolveSessionDeleteOutcome } from "./delete-outcome.ts";
 import { buildSessionsListQuery } from "./list-query.ts";
 import { createSessionsDialog } from "./page-dialog.ts";
-import { loadStoredGroupBy, saveStoredGroupBy } from "./page-state.ts";
+import { loadStoredGroupBy, saveStoredGroupBy, type SessionsTableState } from "./page-state.ts";
 import type { SessionsPageRequestScope } from "./request-scope.ts";
 import type { SessionsRouteData } from "./route.ts";
 import {
@@ -79,8 +80,7 @@ import {
   handleSessionManagementNavigationAction,
   type SessionsPageMenuProps,
 } from "./session-menu.tsx";
-import type { SessionsPageState } from "./sessions-page-state.types.ts";
-import type { SessionsProps } from "./view-types.ts";
+import type { SessionsFilters, SessionsPageState } from "./sessions-page-state.types.ts";
 
 registerSessionOrganizationEnglish();
 
@@ -104,9 +104,7 @@ export function createSessionsPage(
   let routeData = initialRouteData;
   let active = true;
   const menuOwner = {};
-  const [presentation, setPresentation] = createStore<
-    Pick<SessionsProps, "sortColumn" | "sortDir" | "groupBy" | "page" | "pageSize">
-  >({
+  const [presentation, setPresentation] = createStore<SessionsTableState>({
     sortColumn: "updated",
     sortDir: "desc",
     groupBy: loadStoredGroupBy(),
@@ -578,7 +576,7 @@ export function createSessionsPage(
     await searchTranscripts(query);
   }
 
-  function updateFilters(next: Parameters<SessionsProps["onFiltersChange"]>[0]) {
+  function updateFilters(next: SessionsFilters) {
     state.activeMinutes = next.activeMinutes;
     state.limit = next.limit;
     state.includeGlobal = next.includeGlobal;
@@ -990,7 +988,7 @@ export function createSessionsPage(
 
   async function patchSession(
     key: string,
-    patch: Parameters<SessionsProps["onPatch"]>[1],
+    patch: SessionPatch,
     scope: SessionsPageRequestScope | null = captureRequestScope(),
     expectedSessionId?: string,
     options: { onConfirmed?: (result: SessionPatchResult) => void; sessionScope?: boolean } = {},
@@ -1329,7 +1327,7 @@ export function createSessionsPage(
     };
   }
 
-  function viewProps(): SessionsProps {
+  function viewProps() {
     const context = application;
     const personGroupingAvailable = (state.result?.owners?.length ?? 0) > 1;
     return {
@@ -1364,12 +1362,12 @@ export function createSessionsPage(
       groupBy:
         personGroupingAvailable || presentation.groupBy !== "person"
           ? presentation.groupBy
-          : "none",
+          : ("none" as const),
       knownCategories: knownCategories(),
       selectedKeys: new Set(state.selectedSessions.keys()),
       sessionMenu: state.sessionMenu,
       expandedSessionKey: state.expandedSessionKey,
-      labelDisabledReason: (row) =>
+      labelDisabledReason: (row: GatewaySessionRow) =>
         mutationDisabledReason({
           method: "sessions.patch",
           params: { key: row.key, label: null },
@@ -1389,7 +1387,7 @@ export function createSessionsPage(
         params: { key: "", archivedOnly: true, deleteTranscript: true },
       }),
       deleteSelectedDisabledReason: selectedDeleteDisabledReason(),
-      onFiltersChange: (next) => updateFilters(next),
+      onFiltersChange: (next: SessionsFilters) => updateFilters(next),
       onClearFilters: () => {
         state.searchQuery = "";
         updateFilters({
@@ -1399,7 +1397,7 @@ export function createSessionsPage(
           includeUnknown: false,
         });
       },
-      onSearchChange: (query) => {
+      onSearchChange: (query: string) => {
         deepLinkSessionKey = null;
         state.searchQuery = query;
         resetPage();
@@ -1416,14 +1414,14 @@ export function createSessionsPage(
       onTranscriptSearchChange: actions.updateTranscriptSearchQuery,
       onTranscriptSearch: () => void actions.runTranscriptSearch(),
       onClearTranscriptSearch: () => resetTranscriptSearchState(""),
-      onSortChange: (column, direction) => {
+      onSortChange: (column: "key" | "updated", direction: "asc" | "desc") => {
         setPresentation((draft) => {
           draft.sortColumn = column;
           draft.sortDir = direction;
           draft.page = 0;
         });
       },
-      onGroupByChange: (mode) => {
+      onGroupByChange: (mode: SessionsGroupBy) => {
         setPresentation((draft) => {
           draft.groupBy = mode;
           draft.page = 0;
@@ -1431,7 +1429,7 @@ export function createSessionsPage(
         saveStoredGroupBy(mode);
       },
       onAssignCategory: assignCategory,
-      onRequestNewCategory: (sessionKey) => void actions.requestNewCategory(sessionKey),
+      onRequestNewCategory: (sessionKey?: string) => void actions.requestNewCategory(sessionKey),
       onLoadMore: () => {
         const binding = listBinding;
         const offset = state.result?.nextOffset;
@@ -1439,30 +1437,31 @@ export function createSessionsPage(
           void loadSessionList(binding, { offset, append: true });
         }
       },
-      onPageChange: (page) => {
+      onPageChange: (page: number) => {
         setPresentation((draft) => {
           draft.page = page;
         });
       },
-      onPageSizeChange: (pageSize) => {
+      onPageSizeChange: (pageSize: number) => {
         setPresentation((draft) => {
           draft.pageSize = pageSize;
           draft.page = 0;
         });
       },
       onRefresh: () => void refreshSessionList(),
-      onStatusFilterChange: (statusFilter) => updateStatusFilter(statusFilter),
+      onStatusFilterChange: (statusFilter: SessionArchivedFilter) =>
+        updateStatusFilter(statusFilter),
       onDeleteAllArchived: () => void actions.deleteAllArchived(),
-      onPatch: (key, patch, options) =>
+      onPatch: (key: string, patch: SessionPatch, options?: { sessionScope?: boolean }) =>
         void actions.patchSession(key, patch, undefined, undefined, options),
-      onToggleSelect: (key) => updateSelection([key], "toggle"),
-      onSelectPage: (keys) => updateSelection(keys, "select"),
-      onDeselectPage: (keys) => updateSelection(keys, "deselect"),
+      onToggleSelect: (key: string) => updateSelection([key], "toggle"),
+      onSelectPage: (keys: string[]) => updateSelection(keys, "select"),
+      onDeselectPage: (keys: string[]) => updateSelection(keys, "deselect"),
       onDeselectAll: () => {
         state.selectedSessions = new Map();
       },
       onDeleteSelected: () => void actions.deleteSelected(),
-      onNavigateToChat: (sessionKey) => {
+      onNavigateToChat: (sessionKey: string) => {
         const face = resolveSessionPreferredFaceForKey(context, sessionKey);
         const target = sessionNavigationTarget({
           context,
@@ -1474,7 +1473,7 @@ export function createSessionsPage(
         context.navigate(face, target.options);
       },
       onOpenSessionMenu: actions.openSessionMenu,
-      onToggleDetails: (key) => {
+      onToggleDetails: (key: string) => {
         state.expandedSessionKey = state.expandedSessionKey === key ? null : key;
         details.synchronize();
         if (deepLinkSessionKey !== null) {
@@ -1554,7 +1553,7 @@ export function createSessionsPage(
       revision();
       return sessionMenuProps();
     },
-    view: (): SessionsProps => {
+    view: () => {
       revision();
       return viewProps();
     },

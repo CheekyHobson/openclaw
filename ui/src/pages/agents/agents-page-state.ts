@@ -76,7 +76,6 @@ import {
 import type { AgentsRouteData } from "./route.ts";
 import { createAgentSelectionDrafts } from "./selection-drafts.ts";
 import { clearAgentSkillFilter, loadAgentSkills } from "./skills.ts";
-import type { AgentsProps } from "./view.tsx";
 
 type AgentsRequestSources = Partial<Pick<ApplicationContext, "agents" | "agentIdentity">>;
 
@@ -97,6 +96,20 @@ type AgentsPageData = Omit<AgentsState, "agentsLoading" | "agentsError"> &
     sessionKey: string;
     agentsPanel: AgentsPanel;
   };
+type AgentsViewData = Omit<
+  AgentsPageData,
+  | "client"
+  | "connected"
+  | "agents"
+  | "sessions"
+  | "sessionsResult"
+  | "sessionKey"
+  | "agentFileWriteRevisions"
+  | "agentIdentityLoading"
+  | "toolsCatalogLoadingAgentId"
+  | "toolsEffectiveLoadingKey"
+  | "toolsEffectiveResultKey"
+>;
 export function createAgentsPageState(
   context: ApplicationContext,
   initialRouteData?: AgentsRouteData,
@@ -164,6 +177,11 @@ export function createAgentsPageState(
     },
   });
   const state = observation.state;
+  const readData: () => AgentsViewData = observation.read;
+  const readChannels: () => Pick<
+    ReturnType<typeof channels.read>,
+    "channelsSnapshot" | "channelsLoading" | "channelsError" | "channelsLastSuccess"
+  > = channels.read;
   const publish = observation.invalidate;
   const selectionDrafts = createAgentSelectionDrafts(state, resetSelectionState);
   let identitySaves = selectionDrafts.bindContext(context);
@@ -869,9 +887,8 @@ export function createAgentsPageState(
     void runCronTask((cronState) => runCronJob(cronState, jobId, "force"));
   }
 
-  function viewProps(): AgentsProps {
+  function viewProps() {
     const configState = context.runtimeConfig.state;
-    const channelState = channels.read();
     const agentsState = context.agents.state;
     const selectedAgentId = state.agentsSelectedId;
     const canEditIdentity = () =>
@@ -891,54 +908,35 @@ export function createAgentsPageState(
     );
     return {
       access,
+      readData,
+      readChannels,
       basePath: context.basePath,
       loading: agentsState.agentsLoading,
       error: agentsState.agentsError,
-      agentsList: state.agentsList,
       selectedAgentId,
       memoryTarget,
-      activePanel: state.agentsPanel,
       config: configState,
       channels: {
-        snapshot: channelState.channelsSnapshot,
-        loading: channelState.channelsLoading,
-        error: channelState.channelsError,
-        lastSuccess: channelState.channelsLastSuccess,
         onRefresh: () => void context.channels.refresh(false),
       },
       cron: {
-        jobs: state.cron.cronJobs,
-        jobsTotal: state.cron.cronJobsTotal,
-        jobsHasMore: state.cron.cronJobsHasMore,
-        jobsLoadingMore: state.cron.cronJobsLoadingMore,
-        status: state.cron.cronStatus,
-        scopedTotal: state.cron.cronScopedTotal,
-        scopedNextWakeAtMs: state.cron.cronScopedNextWakeAtMs,
-        loading: state.cron.cronLoading,
-        error: state.cron.cronError,
         onRefresh: () => void refreshCron(),
         onLoadMore: () =>
           void runCronTask((cronState) =>
             loadCronJobsPage(cronState, { append: true, tableFilters: true }),
           ),
-        onRunNow: (jobId) => runCronJobNow(jobId),
+        onRunNow: (jobId: string) => runCronJobNow(jobId),
       },
       agentFiles: {
-        agentFilesList: state.agentFilesList,
-        agentFilesLoading: state.agentFilesLoading,
         agentFilesError: state.agentFilesError ?? agentFilesListError,
-        agentFileActive: state.agentFileActive,
-        agentFileEditors: state.agentFileEditors,
-        agentFileSaving: state.agentFileSaving,
-        agentFileConflict: state.agentFileConflict,
-        onLoadFiles: (agentId) => void loadAgentFiles(agentId, true),
-        onSelectFile: (name) => {
+        onLoadFiles: (agentId: string) => void loadAgentFiles(agentId, true),
+        onSelectFile: (name: string) => {
           state.agentFileActive = name;
           if (selectedAgentId) {
             void loadAgentFileContent(state, selectedAgentId, name);
           }
         },
-        onFileDraftChange: (name, content) => {
+        onFileDraftChange: (name: string, content: string) => {
           if (selectedAgentId !== state.agentsSelectedId) {
             return;
           }
@@ -947,22 +945,22 @@ export function createAgentsPageState(
             [name]: { ...state.agentFileEditors[name], draft: content },
           };
         },
-        onFileReset: (name) => {
+        onFileReset: (name: string) => {
           if (selectedAgentId === state.agentsSelectedId) {
             resetAgentFile(state, name);
           }
         },
-        onFileSave: (name) => {
+        onFileSave: (name: string) => {
           if (selectedAgentId) {
             saveSelectedAgentFile(selectedAgentId, name);
           }
         },
-        onFileReload: (name) => {
+        onFileReload: (name: string) => {
           if (selectedAgentId) {
             void reloadAgentFile(state, selectedAgentId, name);
           }
         },
-        onFileOverwrite: (name) => {
+        onFileOverwrite: (name: string) => {
           if (selectedAgentId) {
             saveSelectedAgentFile(selectedAgentId, name, overwriteAgentFile);
           }
@@ -972,33 +970,28 @@ export function createAgentsPageState(
         identities.read().map((entry) => [entry.agentId, entry]),
       ),
       overview: {
-        identityDraft: state.identityDraft,
-        identityScope: state.requestGeneration,
-        identitySaving: state.identitySaving,
-        identityError: state.identityError,
         modelCatalog: modelCatalog.models,
         decisionModels: modelCatalog.decisionModels ?? [],
         modelSelectionPolicy: modelCatalog.modelSelectionPolicy,
         modelCatalogRetired: modelCatalog.retired,
-        modelCatalogStatus: state.chatModelCatalogStatus,
-        onIdentityFieldChange: (field, value) => {
+        onIdentityFieldChange: (field: "name" | "emoji", value: string) => {
           if (canEditIdentity()) {
             setIdentityDraftField(state, field, value);
             scheduleIdentitySave();
           }
         },
-        onIdentityAvatarSelect: (file) => {
+        onIdentityAvatarSelect: (file: File) => {
           if (canEditIdentity()) {
             selectIdentityAvatar(state, file, context.config, () => scheduleIdentitySave(0));
           }
         },
-        onIdentityAvatarSet: (dataUrl) => {
+        onIdentityAvatarSet: (dataUrl: string) => {
           if (canEditIdentity()) {
             setIdentityAvatar(state, dataUrl, context.config);
             scheduleIdentitySave(0);
           }
         },
-        onIdentityAvatarGenerate: async (prompt) => {
+        onIdentityAvatarGenerate: async (prompt: string) => {
           const client = state.client;
           const generation = state.requestGeneration;
           if (
@@ -1028,26 +1021,18 @@ export function createAgentsPageState(
       },
       agentSkills: {
         filter: skillsFilter(),
-        report: state.agentSkillsReport,
-        loading: state.agentSkillsLoading,
-        error: state.agentSkillsError,
-        activeAgentId: state.agentSkillsAgentId,
-        onFilterChange: (next) => setSkillsFilter(next),
+        onFilterChange: (next: string) => {
+          setSkillsFilter(next);
+        },
         onRefresh: () => {
           if (selectedAgentId) {
             void loadAgentSkills(state, selectedAgentId);
           }
         },
         ...configActions.skills,
-        onClear: (agentId) => clearAgentSkills(agentId),
+        onClear: (agentId: string) => clearAgentSkills(agentId),
       },
       tools: {
-        toolsCatalogLoading: state.toolsCatalogLoading,
-        toolsCatalogError: state.toolsCatalogError,
-        toolsCatalogResult: state.toolsCatalogResult,
-        toolsEffectiveLoading: state.toolsEffectiveLoading,
-        toolsEffectiveError: state.toolsEffectiveError,
-        toolsEffectiveResult: state.toolsEffectiveResult,
         githubIdentity,
         onOpenGitHubConnections: () =>
           context.navigate("profile", { hash: "#settings-profile-github-connections" }),
@@ -1056,21 +1041,21 @@ export function createAgentsPageState(
         ...configActions.tools,
       },
       pinnedAgentIds: navigation.read().pinnedAgentIds,
-      onTogglePinnedAgent: (agentId) => togglePinnedAgent(context.navigation, agentId),
+      onTogglePinnedAgent: (agentId: string) => togglePinnedAgent(context.navigation, agentId),
       onRefresh: () => void refreshAgents(),
       onCreateAgent: () => {
         if (canCall("openclaw.chat", "operator.admin")) {
           context.navigate("custodian", { search: "?intent=new-agent" });
         }
       },
-      onSelectPanel: (panel) =>
+      onSelectPanel: (panel: AgentsPanel) =>
         navigateToAgentPanel(context, selectedAgentId, state.agentsPanel, panel),
       onConfigReload: () => void context.runtimeConfig.discardDraft({ reloadOnly: true }),
       onConfigSave: () => void refreshAgents("save"),
       onOpenMemoryImport: () => context.navigate("memory-import"),
       onOpenMemorySettings: () => context.navigate("memory"),
       onOpenAgentDefaults: () => context.navigate("ai-agents"),
-      onSetDefault: (agentId) => void selectDefaultAgent(agentId),
+      onSetDefault: (agentId: string) => void selectDefaultAgent(agentId),
     };
   }
 
@@ -1140,7 +1125,7 @@ export function createAgentsPageState(
     };
   });
   return {
-    read(): AgentsProps {
+    read() {
       observation.read();
       return viewProps();
     },

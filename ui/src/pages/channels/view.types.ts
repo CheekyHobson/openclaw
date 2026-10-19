@@ -1,8 +1,6 @@
 import type { ChannelsPairingRequest } from "../../api/types.ts";
-import type { ChannelsState } from "../../lib/channels/index.ts";
-import type { RuntimeConfigState } from "../../lib/config/config-state-model.ts";
 import type { PluginListResult } from "../../lib/plugins/index.ts";
-import type { ChannelSetup } from "./wizard-setup.ts";
+import type { ChannelsPageProps } from "./channels-page.tsx";
 
 export type ChannelSettingsPresentation = {
   has: (channelId: string) => boolean;
@@ -19,41 +17,15 @@ export type ChannelPairingPrompt = {
 };
 
 export type ChannelsProps = {
-  channels: ChannelsState;
-  config: RuntimeConfigState;
+  [Key in keyof Omit<ChannelsPageProps, "presentation">]: ChannelsPageProps[Key] extends (
+    ...args: infer Args
+  ) => unknown
+    ? (...args: Args) => void
+    : ChannelsPageProps[Key];
+} & {
   presentation: {
     readonly pluginCatalog: PluginListResult | null;
     readonly pluginIconUrls: Record<string, string>;
     readonly details: ChannelSettingsPresentation;
   };
-  wizardHost: ChannelSetup;
-  pairingChannelFilter: string | null;
-  pairingAccountFilter: string | null;
-  pairingPrompt: ChannelPairingPrompt | null;
-  pairingNotice: string | null;
-  canManagePairing: boolean;
-  canAdmin: boolean;
-  showAdvancedSettings: boolean;
-  selectedChannel: string | null;
-  onShowDetail: (channelId: string) => void;
-  onCloseDetail: () => void;
-  onStartSetup: (channelId: string | null) => void;
-  onRefresh: (probe: boolean) => void;
-  onPairingRefresh: () => void;
-  onPairingRoot: (element: HTMLDivElement) => void;
-  onPairingFilterChange: (channel: string | null, accountId: string | null) => void;
-  onPairingReviewAccount: (channel: string, accountId: string) => void;
-  onPairingApprove: (request: ChannelsPairingRequest) => void;
-  onPairingDismiss: (request: ChannelsPairingRequest) => void;
-  onPairingPromptChange: (
-    patch: Partial<Pick<ChannelPairingPrompt, "notify" | "bootstrapCommandOwner">>,
-  ) => void;
-  onPairingPromptCancel: () => void;
-  onPairingPromptConfirm: () => void;
-  onWhatsAppStart: (force: boolean) => void;
-  onWhatsAppWait: () => void;
-  onShowAdvancedSettings: (enabled: boolean) => void;
-  onConfigPatch: (path: Array<string | number>, value: unknown) => void;
-  onConfigSave: () => void;
-  onConfigReload: () => void;
 };

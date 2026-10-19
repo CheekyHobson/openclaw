@@ -37,9 +37,7 @@ import {
   preparedModelPageState,
   updateModelSetupWizardDraft,
   mapActivationResult,
-  type ModelSetupActivationState,
 } from "./state.ts";
-import type { ModelSetupViewProps } from "./view-types.ts";
 import { ModelSetupWizardRunner, type ModelSetupWizardCompletion } from "./wizard-runner.ts";
 
 export type ModelSetupPageProps = {
@@ -216,7 +214,7 @@ export function createModelSetup(
 
   const runVerification = createModelSetupVerifyRequest();
 
-  let feedbackState: ModelSetupActivationState | undefined;
+  let feedbackState: (typeof state)["activationState"] | undefined;
 
   function afterRender() {
     if (!connected) {
@@ -604,20 +602,20 @@ export function createModelSetup(
     }
   }
 
-  function viewProps(): ModelSetupViewProps {
+  function viewProps() {
     const snapshot = context.gateway.snapshot;
     const canAdmin = hasOperatorAdminAccess(snapshot.hello?.auth ?? null);
     const gatewayTooOld =
       snapshot.phase === "connected" &&
       isGatewayMethodAdvertised(snapshot, "openclaw.setup.detect") !== true;
     return {
-      onManualInput: (element) => {
+      onManualInput: (element: HTMLInputElement) => {
         manualInput = element;
       },
-      onFeedback: (element) => {
+      onFeedback: (element: HTMLDivElement) => {
         feedback = element;
       },
-      onWizardDialog: (element) => {
+      onWizardDialog: (element: NonNullable<typeof wizardDialog>) => {
         wizardDialog = element;
       },
       detecting: state.detectionRequest !== null,
@@ -661,7 +659,8 @@ export function createModelSetup(
       moreSignInOpen: state.moreSignInOpen,
       nativeSessionCatalogsEnabled: state.nativeSessionCatalogsEnabled,
       nativeModels,
-      onNativeSessionCatalogsChange: (enabled) => setState("nativeSessionCatalogsEnabled", enabled),
+      onNativeSessionCatalogsChange: (enabled: boolean) =>
+        setState("nativeSessionCatalogsEnabled", enabled),
       firstRun: props.routeData?.firstRun === true,
       iconUrls: state.iconUrls,
       onDetect: () => {
@@ -670,12 +669,12 @@ export function createModelSetup(
         }
       },
       onVerify: () => void firstRun.verify(),
-      onActivateCandidate: (candidate) =>
+      onActivateCandidate: (candidate: SystemAgentSetupDetectResult["candidates"][number]) =>
         void activate(
           candidateActivation(candidate),
           activationTargetId(candidate.kind, candidate.modelRef),
         ),
-      onStartAuth: (option) => {
+      onStartAuth: (option: NonNullable<SystemAgentSetupDetectResult["authOptions"]>[number]) => {
         wizard.prepareSignIn(option.kind, option.label);
         pendingPrepareOption = null;
         setState("wizardMode", "auth");
@@ -693,14 +692,14 @@ export function createModelSetup(
         setState("wizardMode", "prepare");
         void runWizardMutation(() => wizard.start(option.id, "openclaw.setup.prepare.start"));
       },
-      onManualProviderChange: (providerId) => selectManualProvider(providerId),
-      onManualApiKeyChange: (apiKey) => {
+      onManualProviderChange: (providerId: string) => selectManualProvider(providerId),
+      onManualApiKeyChange: (apiKey: string) => {
         setState("manualApiKey", apiKey);
         setState("manualError", null);
       },
       onManualConnect: () => connectManual(),
-      onMoreSignInToggle: (open) => setState("moreSignInOpen", open),
-      onIconError: (iconUrl) => iconLoader.invalidate(iconUrl),
+      onMoreSignInToggle: (open: boolean) => setState("moreSignInOpen", open),
+      onIconError: (iconUrl: string) => iconLoader.invalidate(iconUrl),
       onOpenChat: () => (props.embedded ? props.onClose?.() : firstRun.continueSetup()),
       onOpenSetupAssistant: () => firstRun.continueSetup("utility"),
       onSuccessClose: () => {
@@ -711,8 +710,9 @@ export function createModelSetup(
         setState("activationState", { phase: "idle" });
         void detect();
       },
-      onWizardValueChange: (value) => setState("wizardDraft", { ...state.wizardDraft, value }),
-      onWizardAnswer: (value, includeValue) =>
+      onWizardValueChange: (value: unknown) =>
+        setState("wizardDraft", { ...state.wizardDraft, value }),
+      onWizardAnswer: (value: unknown, includeValue?: boolean) =>
         void runWizardMutation(() => wizard.answer(value, includeValue)),
       onWizardCancel: () => void cancelWizard(),
       onWizardClose: () => closeWizard(),

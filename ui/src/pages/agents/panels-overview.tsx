@@ -12,16 +12,12 @@ import type {
   AgentIdentityResult,
   AgentsFilesListResult,
   AgentsListResult,
-  ModelCatalogEntry,
-  ModelCatalogResult,
 } from "../../api/types.ts";
 import { AgentEmojiPicker } from "../../components/agent-emoji-picker.tsx";
-import type { DecisionModelEntry } from "../../components/model-picker-options.ts";
 import { MultiSelect } from "../../components/multi-select.tsx";
 import { createOverlayAnchor } from "../../components/overlay-anchor.ts";
 import { createOverlay, findOverlayParent } from "../../components/overlay-lifecycle.ts";
 import "../../components/tooltip.ts";
-import type { PanelRefreshStatus } from "../../components/panel-refresh-status-state.ts";
 import { DecisionModelPicker } from "../../components/solid/decision-model-picker.tsx";
 import { AgentIdentityAvatar } from "../../components/solid/identity-avatar.tsx";
 import { ModelPicker } from "../../components/solid/model-picker.tsx";
@@ -47,9 +43,10 @@ import { projectApplicationConfig } from "../../lib/reactive/application.ts";
 import { useOptionalApplication } from "../../lib/reactive/context.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { projectOwner } from "../../lib/reactive/projection.ts";
-import { AvatarPicker, type GeneratedAvatar } from "./avatar-picker.tsx";
+import { AvatarPicker } from "./avatar-picker.tsx";
 import { AgentConfigButtons, type AgentConfigActions } from "./config-actions.tsx";
 import { renderAgentPanelFacts } from "./panel-ui.tsx";
+import type { AgentsProps } from "./view.tsx";
 
 registerEnglishCatalog(registerSettingsEnglish);
 
@@ -60,33 +57,17 @@ export type AgentIdentityDraft = {
 };
 
 export function AgentOverview(
-  params: AgentConfigActions & {
-    agent: AgentsListResult["agents"][number];
-    defaultId: string | null;
-    configForm: Record<string, unknown> | null;
-    agentFilesList: AgentsFilesListResult | null;
-    agentIdentity: AgentIdentityResult | null;
-    identityDraft: AgentIdentityDraft;
-    identityScope: number;
-    identitySaving: boolean;
-    identityError: string | null;
-    canUpdateIdentity: boolean;
-    modelCatalog: ModelCatalogEntry[];
-    modelSelectionPolicy?: ModelCatalogResult["modelSelectionPolicy"];
-    modelCatalogRetired?: boolean;
-    decisionModels: DecisionModelEntry[];
-    modelCatalogStatus: PanelRefreshStatus;
-    onIdentityFieldChange: (field: "name" | "emoji", value: string) => void;
-    onIdentityAvatarSelect: (file: File) => void;
-    onIdentityAvatarSet: (dataUrl: string) => void;
-    onIdentityAvatarGenerate: (prompt: string) => Promise<GeneratedAvatar>;
-    onIdentitySave: () => void;
-    onModelChange: (agentId: string, modelId: string | null) => void;
-    onDecisionModelChange: (agentId: string, modelId: string | null) => void;
-    onModelFallbacksChange: (agentId: string, fallbacks: string[]) => void;
-    onModelCatalogOpen: () => void;
-    onSelectPanel: (panel: AgentsPanel) => void;
-  },
+  params: AgentConfigActions &
+    AgentsProps["overview"] &
+    Pick<AgentsProps, "readData"> & {
+      agent: AgentsListResult["agents"][number];
+      defaultId: string | null;
+      configForm: Record<string, unknown> | null;
+      agentFilesList: AgentsFilesListResult | null;
+      agentIdentity: AgentIdentityResult | null;
+      canUpdateIdentity: boolean;
+      onSelectPanel: (panel: AgentsPanel) => void;
+    },
 ) {
   const applicationConfig = useOptionalApplication()?.config;
   const configProjection = applicationConfig
@@ -177,7 +158,7 @@ export function AgentOverview(
   const disabled = createMemo(
     () => !params.canUpdateConfig || !configForm() || params.configLoading || params.configSaving,
   );
-  const identityDraft = createMemo(() => params.identityDraft, { equals: false });
+  const identityDraft = createMemo(() => params.readData().identityDraft, { equals: false });
   const identityName = createMemo(
     () =>
       identityDraft().name ??
@@ -351,9 +332,9 @@ export function AgentOverview(
                   </div>
                 </div>
               </div>
-              {params.identityError ? (
+              {params.readData().identityError ? (
                 <div class="settings-row__desc" role="alert" style={{ color: "var(--danger)" }}>
-                  {params.identityError}
+                  {params.readData().identityError}
                 </div>
               ) : undefined}
             </div>
@@ -366,7 +347,7 @@ export function AgentOverview(
               aria-label={t("agents.identity.avatarPicker")}
             >
               <Show when={pickerContentVisible()}>
-                <For each={[`${params.agent.id}:${params.identityScope}`]}>
+                <For each={[`${params.agent.id}:${params.readData().requestGeneration}`]}>
                   {() => (
                     <AvatarPicker
                       agentId={params.agent.id}
@@ -418,7 +399,7 @@ export function AgentOverview(
       ) : undefined}
       <SettingsSection
         title={t("agents.overview.modelSelection")}
-        notice={<PanelRefreshNotice status={params.modelCatalogStatus} />}
+        notice={<PanelRefreshNotice status={params.readData().chatModelCatalogStatus} />}
         actions={<AgentConfigButtons {...params} buttonType="button" />}
       >
         <SettingsRow
