@@ -163,7 +163,7 @@ export function createMobileAutomationBinding(props: {
       if (pendingDefinition === captured) {
         pendingDefinition = undefined;
         if (current(captured) && definitionDirty && presented()) {
-          void untrack(resolve);
+          void resolve();
         }
       }
     }
