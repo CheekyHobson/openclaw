@@ -18,11 +18,11 @@ import type {
 } from "./chat-session-companion.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import type { ChatProps } from "./chat-view-frame.ts";
+import type { SessionWorkspaceState } from "./components/chat-session-workspace-types.ts";
 import type {
   SessionWorkspaceProps,
-  SessionWorkspaceState,
-} from "./components/chat-session-workspace-types.ts";
-import type { SidebarSelection } from "./components/chat-sidebar-content-types.ts";
+  SidebarSelection,
+} from "./components/chat-sidebar-content-types.ts";
 import type { SessionDiscussionPanelConfig } from "./components/session-discussion-panel.tsx";
 import type { SidebarSlotId } from "./sidebar-layout-types.ts";
 

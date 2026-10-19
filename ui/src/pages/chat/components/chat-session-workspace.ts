@@ -35,19 +35,15 @@ import {
 } from "./chat-session-workspace-state.ts";
 import type {
   SessionWorkspaceHost,
-  SessionWorkspaceProps,
   SessionWorkspaceState,
 } from "./chat-session-workspace-types.ts";
-import type { SidebarContent } from "./chat-sidebar-content-types.ts";
+import type { SessionWorkspaceProps, SidebarContent } from "./chat-sidebar-content-types.ts";
 import { hasUniformLineEndings } from "./chat-sidebar-file-view.tsx";
 
 registerFilePreviewEnglish();
 
 export { retireSessionWorkspaceCheckout } from "./chat-session-workspace-state.ts";
-export type {
-  SessionWorkspaceHost,
-  SessionWorkspaceProps,
-} from "./chat-session-workspace-types.ts";
+export type { SessionWorkspaceHost } from "./chat-session-workspace-types.ts";
 
 function formatMarkdownCodeSpan(value: string): string {
   // Markdown finds block boundaries before inline spans, so filenames must

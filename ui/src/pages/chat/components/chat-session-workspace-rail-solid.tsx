@@ -15,7 +15,7 @@ import { FileDownloadButton } from "./chat-file-download-button.tsx";
 import type {
   SessionWorkspaceFilter,
   SessionWorkspaceProps,
-} from "./chat-session-workspace-types.ts";
+} from "./chat-sidebar-content-types.ts";
 
 const SESSION_KIND_LABELS = {
   modified: "chat.workspaceFiles.changed",

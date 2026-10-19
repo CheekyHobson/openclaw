@@ -5,11 +5,11 @@ import { afterEach, assert, describe, expect, it, vi } from "vitest";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { SessionWorkspaceRail } from "./chat-session-workspace-rail-solid.tsx";
 import { getSessionWorkspace, loadSessionWorkspace } from "./chat-session-workspace-state.ts";
-import type { SessionWorkspaceProps } from "./chat-session-workspace-types.ts";
 import {
   createSessionWorkspaceProps,
   type SessionWorkspaceHost,
 } from "./chat-session-workspace.ts";
+import type { SessionWorkspaceProps } from "./chat-sidebar-content-types.ts";
 
 type List = NonNullable<SessionWorkspaceProps["list"]>;
 type WorkspaceFixture = Omit<Partial<SessionWorkspaceProps>, "list"> & {
