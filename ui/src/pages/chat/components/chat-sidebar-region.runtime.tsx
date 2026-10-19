@@ -62,7 +62,7 @@ function Region(props: RegionProps, host: RegionElement) {
       if (key === "elements") {
         bindHostedTabsRoot();
       }
-      if (key === "elements" || key === "layout" || key === "panelDefinitions") {
+      if (key === "elements" || key === "layout" || key === "availableWidth" || key === "narrow") {
         scheduleGeometryCommit();
       }
       if (key === "elements" || key === "sideFocusLocked") {
@@ -364,10 +364,16 @@ function Region(props: RegionProps, host: RegionElement) {
           {(panel) => {
             // The semantic key owns this container until that panel is removed.
             const initialPanelId = untrack(() => panel().id);
-            onCleanup(() => panelElements.delete(initialPanelId));
+            onCleanup(() => {
+              panelElements.delete(initialPanelId);
+              scheduleGeometryCommit();
+            });
             return (
               <div
-                ref={(element) => panelElements.set(initialPanelId, element)}
+                ref={(element) => {
+                  panelElements.set(initialPanelId, element);
+                  scheduleGeometryCommit();
+                }}
                 id={`${props.panelIdPrefix}-${encodeURIComponent(panel().slot)}`}
                 class="side-panel__panel"
                 role="region"

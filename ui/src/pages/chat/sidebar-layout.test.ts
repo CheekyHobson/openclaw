@@ -209,6 +209,9 @@ it("clamps and fits the single inherited resizable column", () => {
   const columnId = layout.columns[0]!.id;
   expect(resizePanel(layout, columnId, 1).columns[0]?.width).toBe(SIDEBAR_MIN_WIDTH_PX);
   expect(resizePanel(layout, columnId, Number.MAX_VALUE).columns[0]?.width).toBe(1_200);
+  expect(fitLayout(layout, 1_200)).toBe(layout);
+  const bottom = setSidebarDock(layout, "bottom");
+  expect(fitLayout(bottom, 1_200)).toBe(bottom);
   expect(fitLayout(resizePanel(layout, columnId, 1_000), 1_200)?.columns[0]?.width).toBe(720);
   expect(fitLayout(layout, 560)).toBeNull();
 });

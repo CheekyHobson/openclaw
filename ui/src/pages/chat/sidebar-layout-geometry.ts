@@ -51,29 +51,34 @@ export function fitSidebarLayout(
   layout: SidebarLayout,
   availableWidth: number,
 ): SidebarLayout | null {
-  const next = structuredClone(layout);
   if (!Number.isFinite(availableWidth) || availableWidth <= 0) {
-    return next;
+    return layout;
   }
-  const column = next.columns[0];
+  const column = layout.columns[0];
   if (!column) {
-    return next;
+    return layout;
   }
-  next.columns = [column];
-  if (sidebarDock(next) === "bottom") {
-    column.height = clampHeight(column.height);
-    return next;
+  let { width, height } = column;
+  if (sidebarDock(layout) === "bottom") {
+    height = clampHeight(height);
+  } else {
+    const maxColumnWidth = Math.max(
+      SIDEBAR_MIN_WIDTH_PX,
+      Math.min(SIDEBAR_MAX_WIDTH_PX, availableWidth * 0.6),
+    );
+    const budget = Math.max(
+      0,
+      availableWidth - SIDEBAR_MAIN_MIN_WIDTH_PX - SIDEBAR_DIVIDER_WIDTH_PX,
+    );
+    if (SIDEBAR_MIN_WIDTH_PX > budget) {
+      return null;
+    }
+    width = Math.min(maxColumnWidth, budget, clampWidth(width));
   }
-  const maxColumnWidth = Math.max(
-    SIDEBAR_MIN_WIDTH_PX,
-    Math.min(SIDEBAR_MAX_WIDTH_PX, availableWidth * 0.6),
-  );
-  const budget = Math.max(0, availableWidth - SIDEBAR_MAIN_MIN_WIDTH_PX - SIDEBAR_DIVIDER_WIDTH_PX);
-  if (SIDEBAR_MIN_WIDTH_PX > budget) {
-    return null;
+  if (layout.columns.length === 1 && width === column.width && height === column.height) {
+    return layout;
   }
-  column.width = Math.min(maxColumnWidth, budget, clampWidth(column.width));
-  return next;
+  return { ...layout, columns: [{ ...column, width, height }] };
 }
 
 export function initializeBrowserSidebarWidth(

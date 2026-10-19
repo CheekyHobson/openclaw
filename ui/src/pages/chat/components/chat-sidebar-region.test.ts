@@ -282,6 +282,15 @@ describe("chat sidebar region", () => {
     measure.mockClear();
     commits.length = 0;
 
+    region.panelDefinitions = region.panelDefinitions.map((definition) => ({
+      ...definition,
+      label: `${definition.label} refreshed`,
+    }));
+    await region.updateComplete;
+    vi.advanceTimersToNextFrame();
+    expect(measure).not.toHaveBeenCalled();
+    expect(commits).toEqual([]);
+
     for (let index = 0; index < 4; index++) {
       region.layout = { ...region.layout };
       await region.updateComplete;
@@ -299,6 +308,17 @@ describe("chat sidebar region", () => {
     await region.updateComplete;
     vi.advanceTimersToNextFrame();
     expect(commits).toEqual([false, true]);
+
+    mainWidth = 500;
+    region.availableWidth = 1_000;
+    await region.updateComplete;
+    vi.advanceTimersToNextFrame();
+    expect(commits).toEqual([false, true, true]);
+
+    region.narrow = false;
+    await region.updateComplete;
+    vi.advanceTimersToNextFrame();
+    expect(commits).toEqual([false, true, true, false]);
 
     measure.mockClear();
     region.layout = { ...region.layout };
