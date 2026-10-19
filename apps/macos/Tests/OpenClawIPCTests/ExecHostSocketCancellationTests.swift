@@ -115,7 +115,7 @@ struct ExecHostSocketCancellationTests {
     func `cancelled native executor never starts a command`() async throws {
         let root = try ExecApprovalsSocketTestSupport.makeRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        try self.seed(root)
+        try await self.seed(root)
         let sentinel = root.appendingPathComponent("unexpected")
         let request = ExecHostRequest(command: ["/usr/bin/touch", sentinel.path], cwd: root.path)
         let response = await Task.detached {
@@ -134,7 +134,7 @@ struct ExecHostSocketCancellationTests {
     {
         let root = try ExecApprovalsSocketTestSupport.makeRoot()
         defer { try? FileManager.default.removeItem(at: root) }
-        try self.seed(root)
+        try await self.seed(root)
         let fixture = try CancellationFixture(root: root)
         let server = ExecApprovalsSocketServer(
             socketPath: root.appendingPathComponent("exec.sock").path,
@@ -161,11 +161,10 @@ struct ExecHostSocketCancellationTests {
         await fixture.cleanUp(server: server)
     }
 
-    private func seed(_ root: URL) throws {
-        try ExecApprovalsSQLiteStore.write(
+    private func seed(_ root: URL) async throws {
+        try await ExecApprovalsSocketTestSupport.seedPolicy(
             ExecApprovalsFile(version: 1, defaults: nil, agents: [:]),
-            stateDirectoryURL: root)
-        try ExecApprovalsSocketTestSupport.seedLocalCredentials(in: root)
+            in: root)
     }
 
     private func connect(_ root: URL) throws -> Int32 {

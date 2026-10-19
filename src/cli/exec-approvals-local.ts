@@ -1,8 +1,14 @@
 import { GATEWAY_SERVER_CAPS } from "../../packages/gateway-protocol/src/server-capabilities.js";
+import {
+  commitNativeExecAuthorization,
+  type NativeExecAuthorization,
+} from "../infra/exec-approvals-native.js";
 import { readExecApprovalsSocket } from "../infra/exec-approvals-socket.js";
 import {
   normalizeExecApprovals,
   readExecApprovalsSnapshotAsync,
+  redactExecApprovals,
+  resolveExecApprovalsFromFile,
   updateExecApprovals,
   type ExecApprovalsFile,
   type ExecApprovalsSnapshot,
@@ -17,6 +23,7 @@ export function loadSnapshotLocal(): Promise<LocalExecApprovalsSnapshot> {
     method: "exec.approvals.get",
     params: {},
     target: "default exec approvals",
+    databaseEngine: "configured",
     requiredCapabilities: [GATEWAY_SERVER_CAPS.EXEC_APPROVALS_GET_OWNER],
     recoveryCommand: "openclaw approvals get --json",
     runLocal: async ({ env, assertCurrent }) => {
@@ -26,15 +33,13 @@ export function loadSnapshotLocal(): Promise<LocalExecApprovalsSnapshot> {
       const socket = await readExecApprovalsSocket(env, { assertCurrent });
       assertCurrent();
       return {
-        path: snapshot.path,
-        exists: snapshot.exists,
-        hash: snapshot.hash,
-        file: socket?.socket_path
-          ? {
-              ...snapshot.file,
-              socket: { ...snapshot.file.socket, path: socket.socket_path },
-            }
-          : snapshot.file,
+        ...redactExecApprovals({
+          ...snapshot,
+          file: socket?.socket_path
+            ? { ...snapshot.file, socket: { ...snapshot.file.socket, path: socket.socket_path } }
+            : snapshot.file,
+        }),
+        resolvedDefaults: resolveExecApprovalsFromFile({ file: snapshot.file }).defaults,
       };
     },
   });
@@ -49,6 +54,7 @@ export function saveSnapshotLocal(
     method: "exec.approvals.set",
     params: { file: normalized, baseHash },
     target: "default exec approvals",
+    databaseEngine: "configured",
     requiredCapabilities: [GATEWAY_SERVER_CAPS.EXEC_APPROVALS_SET_OWNER],
     recoveryCommand: "openclaw approvals get --json",
     runLocal: async ({ assertCurrent }) => {
@@ -65,7 +71,31 @@ export function saveSnapshotLocal(
       if (!snapshot) {
         throw new Error("Exec approvals changed; reload and retry.");
       }
-      return snapshot;
+      return {
+        ...redactExecApprovals(snapshot),
+        resolvedDefaults: resolveExecApprovalsFromFile({ file: snapshot.file }).defaults,
+      };
+    },
+  });
+}
+
+export function commitNativeExecLocal(
+  input: NativeExecAuthorization,
+): Promise<{ authorized: true }> {
+  return runWithLocalStateOwner({
+    method: "exec.approvals.native.commit",
+    params: input,
+    target: "native exec authorization",
+    databaseEngine: "configured",
+    requiredCapabilities: [GATEWAY_SERVER_CAPS.EXEC_APPROVALS_NATIVE_COMMIT],
+    recoveryCommand: "openclaw approvals get --json",
+    runLocal: async ({ assertCurrent }) => {
+      assertCurrent();
+      return commitNativeExecAuthorization(
+        input,
+        assertCurrent,
+        captureOpenClawStateWorkerContext(),
+      );
     },
   });
 }
