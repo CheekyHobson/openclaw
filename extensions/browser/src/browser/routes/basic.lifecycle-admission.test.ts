@@ -175,6 +175,29 @@ describe("lifecycle admission", () => {
     expect(route.listTabs).toHaveBeenCalledTimes(reachable ? 1 : 0);
   });
 
+  it("refuses an explicit stop when the Control UI opens during final admission", async () => {
+    setRuntimeConfigSnapshot({ gateway: { publicOrigin: "https://control.example" } });
+    const route = createLifecycleRoute("/stop");
+    route.isHttpReachable.mockResolvedValue(true);
+    let url = "about:blank";
+    route.listTabs.mockImplementation(async () => [{ targetId: "approval", title: "Tab", url }]);
+
+    const response = await route.call({
+      assertCurrent: vi
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockImplementation(async () => {
+          url = "https://control.example/approvals";
+        }),
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toMatchObject({
+      error: expect.stringContaining("cannot access this Gateway's Control UI"),
+    });
+    expect(route.mutation).not.toHaveBeenCalled();
+  });
+
   it("rechecks requester authority after inspecting tabs for an explicit stop", async () => {
     const route = createLifecycleRoute("/stop");
     route.isHttpReachable.mockResolvedValue(true);

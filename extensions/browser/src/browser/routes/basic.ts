@@ -39,6 +39,7 @@ async function withBasicRequestAdmission<T>(
   req: BrowserRequest,
   run: () => Promise<T>,
   profile?: ProfileContext["profile"],
+  beforeDispatch?: () => Promise<void>,
 ): Promise<T> {
   const assertRequesterCurrent = () => {
     req.signal?.throwIfAborted();
@@ -52,6 +53,9 @@ async function withBasicRequestAdmission<T>(
   };
   assertRequesterCurrent();
   await req.assertCurrent?.(profile);
+  if (beforeDispatch) {
+    await beforeDispatch();
+  }
   assertRequesterCurrent();
   return await run();
 }
@@ -384,19 +388,21 @@ export function registerBrowserBasicRoutes(app: BrowserRouteRegistrar, ctx: Brow
   });
 
   registerBasicProfilePost(app, ctx, "/stop", async ({ req, res, profileCtx }) => {
-    if (
-      getBrowserProfileCapabilities(profileCtx.profile).mode === "local-managed" &&
-      (ctx.state().profiles.get(profileCtx.profile.name)?.running ||
-        (await profileCtx.isHttpReachable(STATUS_CDP_HTTP_TIMEOUT_MS, req.signal)))
-    ) {
-      for (const tab of await profileCtx.listTabs({ signal: req.signal })) {
-        await assertBrowserControlUiTabAllowed(tab.url, { signal: req.signal });
-      }
-    }
     const result = await withBasicRequestAdmission(
       req,
       () => profileCtx.stopRunningBrowser(),
       profileCtx.profile,
+      async () => {
+        if (
+          getBrowserProfileCapabilities(profileCtx.profile).mode === "local-managed" &&
+          (ctx.state().profiles.get(profileCtx.profile.name)?.running ||
+            (await profileCtx.isHttpReachable(STATUS_CDP_HTTP_TIMEOUT_MS, req.signal)))
+        ) {
+          for (const tab of await profileCtx.listTabs({ signal: req.signal })) {
+            await assertBrowserControlUiTabAllowed(tab.url, { signal: req.signal });
+          }
+        }
+      },
     );
     res.json({
       ok: true,
