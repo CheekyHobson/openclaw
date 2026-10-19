@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { isNativeError, isProxy } from "node:util/types";
 import type { MessagePort } from "node:worker_threads";
 import { toErrorObject } from "@openclaw/normalization-core/error-coercion";
@@ -200,7 +201,7 @@ export class SqliteWorkerError extends Error {
   }
 }
 
-/** Preserve result and settlement failures when adding a worker diagnostic. */
+/** Preserve distinct result and settlement failures when adding a worker diagnostic. */
 export function wrapSqliteWorkerError(
   message: string,
   code: SqliteWorkerError["code"] | undefined,
@@ -208,7 +209,10 @@ export function wrapSqliteWorkerError(
 ): Error {
   const retained = causes
     .filter((cause) => cause !== undefined)
-    .map((cause) => toErrorObject(cause, message));
+    .map((cause) => toErrorObject(cause, message))
+    .filter(
+      (cause, index, all) => all.findIndex((other) => isDeepStrictEqual(other, cause)) === index,
+    );
   return Object.assign(
     code === undefined ? new Error(message) : new SqliteWorkerError(message, code),
     {
