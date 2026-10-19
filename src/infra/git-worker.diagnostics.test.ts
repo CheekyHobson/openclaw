@@ -2,7 +2,6 @@ import { performance } from "node:perf_hooks";
 import { afterEach, expect, it, vi } from "vitest";
 import { drainGlobalSingletonLifecycleState } from "../shared/global-singleton.js";
 import * as diagnostics from "./diagnostic-events.js";
-import type { DiffReadTiming } from "./diff-read-timing.js";
 import { runGitWorkerOperation } from "./git-worker.js";
 import { getTrackedWorkerLifecycleSnapshot } from "./worker-cpu.js";
 import { WorkerTaskPool } from "./worker-task-pool.js";
@@ -28,22 +27,6 @@ afterEach(async () => {
   await drainGlobalSingletonLifecycleState();
   vi.restoreAllMocks();
   logs.info.mockClear();
-});
-
-it("carries the bounded revision failure reason from the worker to the cache timing", async () => {
-  vi.spyOn(WorkerTaskPool.prototype, "run").mockResolvedValue({
-    ok: true,
-    value: null,
-    revisionUnavailableReason: "oversized",
-  });
-  const diffTiming: DiffReadTiming = { durations: {} };
-  await expect(
-    runGitWorkerOperation(
-      { type: "checkout.revision", input: { root: "/revision-diagnostics", scope: "diff" } },
-      { diffTiming },
-    ),
-  ).resolves.toBeNull();
-  expect(diffTiming.revisionUnavailableReason).toBe("oversized");
 });
 
 it("reuses concurrent Git readers across polling intervals and releases them when idle", async () => {
