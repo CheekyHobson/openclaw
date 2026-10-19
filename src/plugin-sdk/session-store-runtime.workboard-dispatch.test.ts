@@ -89,6 +89,7 @@ it.each([true, false])(
             updatedAt: Date.now(),
             pluginOwnerId: "workboard",
             modelOverride: "old-model",
+            modelOverrideSource: "auto",
           },
         });
         await appendSessionTranscriptMessageByIdentity({

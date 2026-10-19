@@ -14,6 +14,7 @@ import {
 } from "../gateway/server-plugin-in-process-dispatch.test-support.js";
 import { PluginInstance } from "../plugins/plugin-instance.js";
 import { withPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
+import { resolveSessionCommunicationPolicy } from "../sessions/communication-policy.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import {
@@ -63,6 +64,7 @@ it.each([
         worktree: { id: "task-tree", branch: "task", repoRoot: "/workspace" },
         elevatedLevel: "off",
         sendPolicy: "deny" as const,
+        communication: { send: "never", receive: "never" } as const,
         spawnedBy: "agent:requester:main",
         spawnDepth: 1,
         inheritedToolPolicyVersion: 1 as const,
@@ -125,6 +127,10 @@ it.each([
         expect(
           resolveSessionPermissionCoreToolPolicy({ mode: fresh?.permissionMode ?? "full" }),
         ).toMatchObject({ readOnly: true, workspaceOnly: true, execMode: "deny" });
+        expect(resolveSessionCommunicationPolicy({ config, entry: fresh })).toEqual({
+          send: "never",
+          receive: "never",
+        });
         const store = { [scope.sessionKey]: fresh ?? {} };
         const policy = resolveInheritedToolPolicyForSession(config, scope.sessionKey, { store });
         expect(isToolAllowedByPolicyName("exec", policy)).toBe(false);
