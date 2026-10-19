@@ -140,9 +140,9 @@ describe("typed Git read ownership", () => {
       await read();
     }
     await waitForDiagnosticEventsDrained();
-    const phases = events.filter(
-      (event) => event.type === "diagnostic.phase.completed" && event.name === "checkout.diff",
-    );
+    const phases = events
+      .filter((event) => event.type === "diagnostic.phase.completed")
+      .filter((event) => event.name === "checkout.diff");
     expect(phases.map((event) => event.details?.missReason)).toEqual(
       ["head", "index", "untracked-set", "worktree-mtime", "metadata"].flatMap((component) => [
         "cold",
@@ -181,9 +181,9 @@ describe("typed Git read ownership", () => {
     await read("/bounded-eviction-0");
     await read("/bounded-eviction-2");
     await waitForDiagnosticEventsDrained();
-    const phases = events.filter(
-      (event) => event.type === "diagnostic.phase.completed" && event.name === "checkout.diff",
-    );
+    const phases = events
+      .filter((event) => event.type === "diagnostic.phase.completed")
+      .filter((event) => event.name === "checkout.diff");
     const reasons = phases.map((event) => event.details?.missReason);
     expect(reasons.slice(0, 2)).toEqual(["no-revision", "oversized"]);
     expect(reasons.slice(-2)).toEqual(["cold", "evicted"]);

@@ -1072,10 +1072,13 @@ samples retain diagnostic miss reasons when the revision supports them.
 
 For cache-reuse changes, compare both the 267,000-file fixture and a small
 fixture with `--summary --tabs 3 --background 0 --maintenance 0 --agents 0 --poll-ms 250
---churn-ms 1000 --duration-ms 30000`. Require unchanged response hashes, a passing
-edit control, fewer full diff reads, and a higher cache hit rate without a
-material paired latency regression. Native Git status used to validate a
-revision still counts as Git work; cache hits do not imply zero subprocesses.
+--churn-ms 1000 --duration-ms 30000`. Run full-diff comparisons separately by
+omitting `--summary`: oversized summaries retain their existing 10-second
+fallback, while full diffs require fresh validation. Require unchanged response
+hashes, a passing edit control, and fewer diff collections with a higher cache
+hit rate on the repaired path, without a material paired latency regression.
+Native Git status used to validate a revision still counts as Git work; cache
+hits do not imply zero subprocesses.
 
 For a second scenario with independent revision checks, add
 `--poll-state-dir <other seeded fixture>` on each side. Both isolated Gateways
