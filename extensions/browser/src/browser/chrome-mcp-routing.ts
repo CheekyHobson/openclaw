@@ -32,7 +32,6 @@ import {
 import { getChromeMcpSessionOwner } from "./chrome-mcp-session.js";
 import type { ChromeMcpSnapshotNode } from "./chrome-mcp.snapshot.js";
 import { BrowserProfileUnavailableError, BrowserTabNotFoundError } from "./errors.js";
-import { assertBrowserControlUiTabAllowed } from "./navigation-guard.js";
 
 export function getChromeMcpRoutingState(session: ChromeMcpSession): ChromeMcpRoutingState {
   // Routing state lives exactly as long as one stdio subprocess. The compact
@@ -203,17 +202,6 @@ export function resolveChromeMcpSnapshotRef(
   return resolved;
 }
 
-function assertChromeMcpLeaseCurrent(lease: ChromeMcpSessionLease, profileName: string): void {
-  if (
-    !lease.temporary &&
-    (!lease.owner.isCurrent(lease.session) || lease.session.transport.pid === null)
-  ) {
-    throw new BrowserProfileUnavailableError(
-      `Chrome MCP session for profile "${redactChromeMcpProfileLabelForDiagnostic(profileName)}" changed before the operation could start. Run the browser command again to reconnect.`,
-    );
-  }
-}
-
 async function callTool(
   profileName: string,
   profileOptions: NormalizedChromeMcpProfileOptions,
@@ -227,7 +215,6 @@ async function callTool(
   if (signal?.aborted) {
     throw signal.reason ?? new Error("aborted");
   }
-  assertChromeMcpLeaseCurrent(lease, profileName);
   // SDK-owned cancellation removes its request correlation entry. An outer race would return
   // early while leaving the underlying MCP request pending after a target-browser crash.
   const request = { name, arguments: args };
@@ -320,7 +307,14 @@ export async function withChromeMcpLease<T>(
   );
   try {
     return await withChromeMcpOperationLock(lease.session, options, async () => {
-      assertChromeMcpLeaseCurrent(lease, profileName);
+      if (
+        !lease.temporary &&
+        (!lease.owner.isCurrent(lease.session) || lease.session.transport.pid === null)
+      ) {
+        throw new BrowserProfileUnavailableError(
+          `Chrome MCP session for profile "${redactChromeMcpProfileLabelForDiagnostic(profileName)}" changed before the operation could start. Run the browser command again to reconnect.`,
+        );
+      }
       const call: ChromeMcpOperation["callTool"] = (name, args, callOptions = options) =>
         callTool(profileName, normalizedProfileOptions, name, args, callOptions, lease);
       return await operation({
@@ -388,27 +382,7 @@ export async function withChromeMcpTarget<T>(
       if (pageId === undefined) {
         throw new BrowserTabNotFoundError({ input: params.targetId });
       }
-      return await operation({
-        ...sessionOperation,
-        pageId,
-        callTool: async (name, args, callOptions = params) => {
-          // Preparation can outlive tab selection; inspect the exact target for each effect.
-          const current = (await sessionOperation.listTargets(callOptions)).find(
-            (entry) => entry.targetId === params.targetId && entry.page.id === pageId,
-          );
-          if (!current) {
-            throw new BrowserTabNotFoundError({ input: params.targetId });
-          }
-          if (!current.page.url) {
-            throw new BrowserProfileUnavailableError(
-              "Chrome MCP did not report the current tab URL.",
-            );
-          }
-          await assertBrowserControlUiTabAllowed(current.page.url, callOptions);
-          params.signal?.throwIfAborted();
-          return await sessionOperation.callTool(name, args, callOptions);
-        },
-      });
+      return await operation({ ...sessionOperation, pageId });
     },
   );
 }

@@ -5,11 +5,7 @@ import { setImmediate } from "node:timers/promises";
 import { SdkError, SdkErrorCode } from "@modelcontextprotocol/client";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import * as processRuntime from "openclaw/plugin-sdk/process-runtime";
-import {
-  clearRuntimeConfigSnapshot,
-  setRuntimeConfigSnapshot,
-} from "openclaw/plugin-sdk/runtime-config-snapshot";
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
+import { describe, expect, it, vi, type MockInstance } from "vitest";
 // Route tests mock the public facade in shared workers; exercise the real owners here.
 import {
   clickChromeMcpCoords,
@@ -24,7 +20,9 @@ import {
   takeChromeMcpScreenshot,
   takeChromeMcpSnapshot,
   uploadChromeMcpFile,
+  withChromeMcpDocument,
 } from "./chrome-mcp-actions.js";
+import { ChromeMcpDocumentUnavailableError } from "./chrome-mcp-contracts.js";
 import { normalizeChromeMcpOptions } from "./chrome-mcp-options.js";
 import { refreshChromeMcpCleanupProcess } from "./chrome-mcp-process.js";
 import {
@@ -68,9 +66,6 @@ type ChromeMcpSession = ReturnType<ChromeMcpSessionFactory>;
 type CloseMock = MockInstance<ChromeMcpSession["client"]["close"]>;
 
 const fakeTarget = { profileName: "chrome-live", targetId: FAKE_TARGET_1 };
-
-beforeEach(() => setRuntimeConfigSnapshot({}));
-afterEach(() => clearRuntimeConfigSnapshot());
 
 function installFakeSessions(
   configure: (session: ChromeMcpSession, call: number, close: CloseMock) => void,
@@ -899,23 +894,12 @@ describe("chrome MCP page parsing", () => {
 
     expect(clickedUid).toBe("uid-a");
     const calls = vi.spyOn(session.client, "callTool").mock.calls.map(([call]) => call.name);
-    expect(calls).toEqual([
-      "list_pages",
-      "list_pages",
-      "take_snapshot",
-      "list_pages",
-      "new_page",
-      "list_pages",
-      "click",
-    ]);
+    expect(calls).toEqual(["list_pages", "take_snapshot", "list_pages", "new_page", "click"]);
   });
 
   it("uses native pointer input for coordinate clicks", async () => {
     const session = createFakeSession();
     const callTool = vi.fn(async ({ name }: ToolCall) => {
-      if (name === "list_pages") {
-        return fakeListPagesResult();
-      }
       if (name === "click_at") {
         return textResult("Successfully clicked at the coordinates");
       }
@@ -932,7 +916,6 @@ describe("chrome MCP page parsing", () => {
     });
 
     expect(callTool.mock.calls.map(([call]) => call)).toEqual([
-      { name: "list_pages", arguments: {} },
       { name: "click_at", arguments: { pageId: 1, x: 10, y: 20, dblClick: true } },
     ]);
   });
@@ -1144,14 +1127,11 @@ describe("chrome MCP page parsing", () => {
   it("cancels a stuck evaluate through the SDK signal and reconnects", async () => {
     let forwardedSignal: AbortSignal | undefined;
     const { promise: toolStarted, resolve: notifyToolStarted } = createDeferred<void>();
-    const { factory } = installFakeSessions((session, invocation) => {
-      if (invocation === 1) {
+    const { factory } = installFakeSessions((session, call) => {
+      if (call === 1) {
         session.client.callTool = vi.fn(
-          async (call: ToolCall, options?: { signal?: AbortSignal }) => {
-            if (call.name === "list_pages") {
-              return fakeListPagesResult();
-            }
-            return await new Promise((_resolve, reject) => {
+          async (_call: ToolCall, options?: { signal?: AbortSignal }) =>
+            await new Promise((_resolve, reject) => {
               const signal = options?.signal;
               forwardedSignal = signal;
               notifyToolStarted();
@@ -1164,8 +1144,7 @@ describe("chrome MCP page parsing", () => {
                   once: true,
                 },
               );
-            });
-          },
+            }),
         ) as typeof session.client.callTool;
       }
     });
@@ -1309,8 +1288,167 @@ describe("chrome MCP page parsing", () => {
   });
 });
 
+async function setupSnapshotSession(
+  onTool: Parameters<typeof createPageSession>[0]["onTool"],
+  pageIds = [1],
+) {
+  const session = createPageSession({
+    pages: pageIds.map((id) => ({ id, url: `https://page-${id}.example` })),
+    onTool,
+  });
+  setChromeMcpSessionFactoryForTest(() => session);
+  const targets = (await listChromeMcpTabs("chrome-live")).map((tab) => targetFor(tab.targetId));
+  return { session, targets };
+}
+
 function snapshotResult(snapshot: ChromeMcpSnapshotNode) {
   return { structuredContent: { snapshot } };
 }
 
+function buttonDocument(suffix = "", name?: string): ChromeMcpSnapshotNode {
+  return {
+    id: `root${suffix}`,
+    role: "RootWebArea",
+    children: [{ id: `button${suffix}`, role: "button", ...(name ? { name } : {}) }],
+  };
+}
+
+describe("Chrome MCP snapshot identity and lifetime", () => {
+  installChromeMcpSessionTestHooks();
+
+  it("retires target refs before a failed snapshot refresh", async () => {
+    let refreshing = false;
+    let oldRef = "";
+    const refPresentAtDispatch: boolean[] = [];
+    const clicks: unknown[] = [];
+    const { session, targets } = await setupSnapshotSession(
+      {
+        take_snapshot: (call) => {
+          const pageId = call.arguments?.pageId;
+          if (typeof pageId !== "number") {
+            throw new Error("Snapshot requires a numeric pageId");
+          }
+          if (refreshing) {
+            refPresentAtDispatch.push(
+              session.routing!.snapshotsByTarget.get(target.targetId)?.refs.has(oldRef) ?? false,
+            );
+            return textResult("snapshot failed after refresh", true);
+          }
+          return snapshotResult(buttonDocument(`-${pageId}`, "Run"));
+        },
+        click: (call) => {
+          clicks.push([call.arguments?.pageId, call.arguments?.uid]);
+          return { content: [] };
+        },
+      },
+      [1, 2],
+    );
+    const target = targets[0]!;
+    const sibling = targets[1]!;
+    oldRef = (await takeChromeMcpSnapshot(target)).children![0]!.id!;
+    const siblingRef = (await takeChromeMcpSnapshot(sibling)).children![0]!.id!;
+    refreshing = true;
+    const refresh = takeChromeMcpSnapshot(target);
+    await expect(refresh).rejects.toThrow("snapshot failed after refresh");
+    expect(refPresentAtDispatch).toEqual([false]);
+    await expect(clickChromeMcpElement({ ...target, uid: oldRef })).rejects.toThrow(/Unknown ref/);
+    await clickChromeMcpElement({ ...sibling, uid: siblingRef });
+    expect(clicks).toEqual([[2, "button-2"]]);
+  });
+
+  it("recaptures an expired document without retiring healthy sibling refs", async () => {
+    const snapshots: number[] = [];
+    const evaluatedUids: unknown[] = [];
+    const clicks: unknown[] = [];
+    let navigated = false;
+    const { targets } = await setupSnapshotSession(
+      {
+        take_snapshot: (call) => {
+          const pageId = call.arguments?.pageId;
+          if (typeof pageId !== "number") {
+            throw new Error("Snapshot requires a numeric pageId");
+          }
+          snapshots.push(pageId);
+          const documentId = pageId === 1 && navigated ? "new" : "initial";
+          return snapshotResult(buttonDocument(`-${pageId}-${documentId}`));
+        },
+        evaluate_script: (call) => {
+          const args = call.arguments?.args;
+          evaluatedUids.push(args);
+          if (navigated && Array.isArray(args) && args[0] === "root-1-initial") {
+            return textResult(
+              "Element with uid root-1-initial no longer exists on the page.",
+              true,
+            );
+          }
+          return textResult("```json\ntrue\n```");
+        },
+        click: (call) => {
+          clicks.push([call.arguments?.pageId, call.arguments?.uid]);
+          return { content: [] };
+        },
+      },
+      [1, 2],
+    );
+    const target = targets[0]!;
+    const sibling = targets[1]!;
+    const oldRef = (await takeChromeMcpSnapshot(target)).children![0]!.id!;
+    const siblingRef = (await takeChromeMcpSnapshot(sibling)).children![0]!.id!;
+    navigated = true;
+
+    await expect(
+      withChromeMcpDocument(target, (document) => document.evaluate("() => true")),
+    ).rejects.toBeInstanceOf(ChromeMcpDocumentUnavailableError);
+    await expect(clickChromeMcpElement({ ...target, uid: oldRef })).rejects.toThrow(/Unknown ref/);
+    await clickChromeMcpElement({ ...sibling, uid: siblingRef });
+    await expect(
+      withChromeMcpDocument(target, (document) => document.evaluate("() => true")),
+    ).resolves.toBe(true);
+    await expect(clickChromeMcpElement({ ...target, uid: oldRef })).rejects.toThrow(/Unknown ref/);
+
+    expect(snapshots).toEqual([1, 2, 1]);
+    expect(evaluatedUids).toEqual([["root-1-initial"], ["root-1-new"]]);
+    expect(clicks).toEqual([[2, "button-2-initial"]]);
+  });
+
+  it.each([true, false])(
+    "discards invalid snapshots without admitting inspection (ambiguous refs=%s)",
+    async (ambiguous) => {
+      let snapshots = 0;
+      const { session, targets } = await setupSnapshotSession({
+        take_snapshot: () => {
+          if (++snapshots > 1) {
+            return snapshotResult({ ...buttonDocument(), id: "valid-root" });
+          }
+          return snapshotResult(
+            ambiguous
+              ? snapshotWithControls(
+                  { id: "button", role: "button", name: "Run" },
+                  { id: "frame", role: "Iframe", children: [{ id: "button", role: "button" }] },
+                )
+              : { role: "RootWebArea", children: [{ id: "button", role: "button" }] },
+          );
+        },
+        evaluate_script: () => textResult(ambiguous ? "```json\nnull\n```" : "```json\ntrue\n```"),
+      });
+      const target = targets[0]!;
+      const inspect = vi.fn(async () => true);
+      await expect(withChromeMcpDocument(target, inspect)).rejects.toThrow(
+        ambiguous
+          ? /ambiguous element IDs.*managed browser profile/
+          : "Chrome MCP snapshot did not contain a top-level document uid",
+      );
+      expect(inspect).not.toHaveBeenCalled();
+      expect(session.routing!.snapshotsByTarget.has(target.targetId)).toBe(false);
+      if (ambiguous) {
+        await expect(evaluateChromeMcpScript({ ...target, fn: "() => null" })).resolves.toBeNull();
+      } else {
+        await expect(
+          withChromeMcpDocument(target, (document) => document.evaluate("() => true")),
+        ).resolves.toBe(true);
+        expect(snapshots).toBe(2);
+      }
+    },
+  );
+});
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
