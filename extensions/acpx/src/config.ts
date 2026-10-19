@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatPluginConfigIssue } from "openclaw/plugin-sdk/extension-shared";
-import { resolveStateDir } from "openclaw/plugin-sdk/state-paths";
+import { resolveConfigPath, resolveStateDir } from "openclaw/plugin-sdk/state-paths";
 import {
   isRecord,
   normalizeLowercaseStringOrEmpty,
@@ -155,23 +155,38 @@ function resolveTsxImportSpecifier(): string {
   }
 }
 
+// ACP harnesses do not inherit the Gateway environment, so the bridge they
+// launch is told where this Gateway's state and config live. These are paths,
+// not credentials.
+function resolveManagedToolsMcpServerEnv(): Record<string, string> {
+  const profile = process.env.OPENCLAW_PROFILE?.trim();
+  return {
+    OPENCLAW_STATE_DIR: resolveStateDir(),
+    OPENCLAW_CONFIG_PATH: resolveConfigPath(),
+    ...(profile ? { OPENCLAW_PROFILE: profile } : {}),
+  };
+}
+
 function resolveManagedToolsMcpServerConfig(
   entryPoint: "plugin-tools-serve" | "openclaw-tools-serve",
   moduleUrl: string = import.meta.url,
 ): McpServerConfig {
   const pluginRoot = resolveAcpxPluginRoot(moduleUrl);
   const openClawRoot = resolveOpenClawRoot(pluginRoot);
+  const env = resolveManagedToolsMcpServerEnv();
   const distEntry = path.join(openClawRoot, "dist", "mcp", `${entryPoint}.js`);
   if (fs.existsSync(distEntry)) {
     return {
       command: process.execPath,
       args: [distEntry],
+      env,
     };
   }
   const sourceEntry = path.join(openClawRoot, "src", "mcp", `${entryPoint}.ts`);
   return {
     command: process.execPath,
     args: ["--import", resolveTsxImportSpecifier(), sourceEntry],
+    env,
   };
 }
 

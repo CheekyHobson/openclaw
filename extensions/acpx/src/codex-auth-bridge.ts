@@ -106,23 +106,24 @@ function buildCodexAcpWrapperScript(installedBinPath?: string): string {
     envSetup: `const codexHome = fileURLToPath(new URL("./codex-home/", import.meta.url));
 const codexAuthPath = fileURLToPath(new URL("./codex-home/auth.json", import.meta.url));
 const codexApiKey = (process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY || "").trim();
-let shouldWriteCodexApiKeyAuth = false;
-if (codexApiKey) {
-  if (!existsSync(codexAuthPath)) {
-    shouldWriteCodexApiKeyAuth = true;
-  } else {
-    try {
-      const existingCodexAuth = JSON.parse(readFileSync(codexAuthPath, "utf8"));
-      shouldWriteCodexApiKeyAuth =
-        !existingCodexAuth ||
-        typeof existingCodexAuth !== "object" ||
-        typeof existingCodexAuth.OPENAI_API_KEY === "string";
-    } catch {
-      shouldWriteCodexApiKeyAuth = true;
-    }
+let wrapperOwnsCodexAuth = !existsSync(codexAuthPath);
+if (!wrapperOwnsCodexAuth) {
+  try {
+    const existingCodexAuth = JSON.parse(readFileSync(codexAuthPath, "utf8"));
+    wrapperOwnsCodexAuth =
+      !existingCodexAuth ||
+      typeof existingCodexAuth !== "object" ||
+      typeof existingCodexAuth.OPENAI_API_KEY === "string";
+  } catch {
+    wrapperOwnsCodexAuth = true;
   }
 }
-if (shouldWriteCodexApiKeyAuth) {
+// API-key auth here is only ever seeded by this wrapper. Without a granted key,
+// drop it so a key once inherited from the Gateway does not outlive the grant.
+if (!codexApiKey && wrapperOwnsCodexAuth) {
+  rmSync(codexAuthPath, { force: true });
+}
+if (codexApiKey && wrapperOwnsCodexAuth) {
   writeFileSync(
     codexAuthPath,
     JSON.stringify({

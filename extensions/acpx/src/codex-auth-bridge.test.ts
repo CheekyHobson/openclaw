@@ -283,6 +283,12 @@ describe("prepareAcpxCodexAuthConfig", () => {
 
     await run({ ...process.env, OPENAI_API_KEY: "sk-test-api-key" });
     expect(JSON.parse(await fs.readFile(authPath, "utf8"))).toEqual(existingAuth);
+
+    const withoutKey = { ...process.env };
+    delete withoutKey.CODEX_API_KEY;
+    delete withoutKey.OPENAI_API_KEY;
+    await run(withoutKey);
+    expect(JSON.parse(await fs.readFile(authPath, "utf8"))).toEqual(existingAuth);
   });
 
   it("updates existing isolated Codex API-key auth when env auth changes", async () => {
@@ -294,6 +300,18 @@ describe("prepareAcpxCodexAuthConfig", () => {
     expect(JSON.parse(await fs.readFile(authPath, "utf8"))).toMatchObject(
       apiKeyAuth("sk-new-api-key"),
     );
+  });
+
+  it("removes wrapper-seeded Codex API-key auth once no key is granted", async () => {
+    const { authPath, run, writeAuth } = await adapterFixture();
+    await writeAuth(apiKeyAuth("sk-previously-inherited"));
+    const env = { ...process.env };
+    delete env.CODEX_API_KEY;
+    delete env.OPENAI_API_KEY;
+
+    await run(env);
+
+    await expect(fs.access(authPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("does not copy source Codex auth", async () => {

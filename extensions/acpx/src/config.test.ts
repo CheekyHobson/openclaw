@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { resolveConfigPath, resolveStateDir } from "openclaw/plugin-sdk/state-paths";
 import { useAutoCleanupTempDirTracker } from "openclaw/plugin-sdk/test-env";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveAcpxPluginConfig, resolveAcpxPluginRoot } from "./config.js";
@@ -17,6 +18,11 @@ function expectedMcpServerArgs(params: { sourceEntry: string; distEntry: string 
     return [distEntry];
   }
   return ["--import", TSX_IMPORT, path.resolve(params.sourceEntry)];
+}
+
+// Harnesses do not inherit the Gateway environment; bridges get state/config locators.
+function managedBridgeEnv(): Record<string, string> {
+  return { OPENCLAW_STATE_DIR: resolveStateDir(), OPENCLAW_CONFIG_PATH: resolveConfigPath() };
 }
 
 describe("embedded acpx plugin config", () => {
@@ -104,6 +110,7 @@ describe("embedded acpx plugin config", () => {
         sourceEntry: "src/mcp/plugin-tools-serve.ts",
         distEntry: "dist/mcp/plugin-tools-serve.js",
       }),
+      env: managedBridgeEnv(),
     });
   });
 
@@ -137,10 +144,12 @@ describe("embedded acpx plugin config", () => {
         "openclaw-plugin-tools": {
           command: process.execPath,
           args: [path.join(hostRoot, "dist", "mcp", "plugin-tools-serve.js")],
+          env: managedBridgeEnv(),
         },
         "openclaw-tools": {
           command: process.execPath,
           args: [path.join(hostRoot, "dist", "mcp", "openclaw-tools-serve.js")],
+          env: managedBridgeEnv(),
         },
       });
     } finally {
