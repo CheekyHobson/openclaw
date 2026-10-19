@@ -170,7 +170,7 @@ export function formatUninheritedHarnessCredentialWarning(
   if (names.length === 0) {
     return undefined;
   }
-  return `ACP harnesses do not inherit Gateway credentials; ${names.join(", ")} will not reach them. Sign in each harness with its own login. See https://docs.openclaw.ai/tools/acp-agents-setup#harness-credentials`;
+  return `ACP harnesses do not inherit Gateway credentials; ${names.join(", ")} will not reach them. Grant one with ACPX_AUTH_<NAME> in the Gateway environment or sign in with the harness's own login. See https://docs.openclaw.ai/tools/acp-agents-setup#harness-credentials`;
 }
 
 function shouldProbeRuntimeAtStartup(env: NodeJS.ProcessEnv = process.env): boolean {

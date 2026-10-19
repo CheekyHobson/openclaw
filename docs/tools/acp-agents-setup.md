@@ -157,10 +157,22 @@ settings, and Windows system variables. The Gateway token and provider keys
 such as `OPENAI_API_KEY` do not reach harnesses, the MCP servers they start, or
 the commands they run.
 
-Sign in each harness with its own login on the Gateway host, for example
-`claude login` or `opencode auth login`. Logins stored under the Gateway user's
-home keep working. The managed OpenClaw tools bridge receives only the
-Gateway's state and config locations.
+Give a harness a credential in one of two ways:
+
+- **Its own login.** Sign in on the Gateway host, for example `claude login` or
+  `opencode auth login`. Logins stored under the Gateway user's home keep
+  working.
+- **An explicit grant.** Set `ACPX_AUTH_<NAME>` in the Gateway's environment.
+  Harnesses then receive `<NAME>`, and acpx answers an ACP auth method whose id
+  normalizes to `<NAME>`. For example, `ACPX_AUTH_OPENROUTER_API_KEY` gives
+  OpenCode and Kilo `OPENROUTER_API_KEY`. Codex needs
+  `ACPX_AUTH_OPENAI_API_KEY` for the key plus `ACPX_AUTH_API_KEY=1` to select
+  its `api-key` sign-in method.
+
+Grants apply to every ACP harness the Gateway starts, so grant only what all of
+them may use. Two harnesses that need different values for the same variable
+name cannot both be granted from one Gateway. The managed OpenClaw tools bridge
+receives only the Gateway's state and config locations.
 
 At startup, OpenClaw logs a warning that names known provider credentials set in
 the Gateway environment, because harnesses no longer receive them. It never logs
