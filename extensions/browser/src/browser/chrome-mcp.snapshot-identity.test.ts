@@ -12,12 +12,13 @@ import {
 } from "./chrome-mcp-actions.js";
 import { ChromeMcpDocumentUnavailableError } from "./chrome-mcp-contracts.js";
 import { closeChromeMcpSession } from "./chrome-mcp-session.js";
+import { listChromeMcpTabs } from "./chrome-mcp-tabs.js";
 import type { ChromeMcpSnapshotNode } from "./chrome-mcp.snapshot.js";
 import {
+  createPageSession,
   installChromeMcpSessionTestHooks,
   pagesResult,
-  setupSnapshotSession,
-  snapshotResult,
+  setChromeMcpSessionFactoryForTest,
   snapshotWithControls,
   textResult,
 } from "./chrome-mcp.test-support.js";
@@ -31,6 +32,26 @@ vi.mock("./chrome-mcp-connect.js", async (importOriginal) => {
 
 beforeEach(() => setRuntimeConfigSnapshot({}));
 afterEach(() => clearRuntimeConfigSnapshot());
+
+async function setupSnapshotSession(
+  onTool: Parameters<typeof createPageSession>[0]["onTool"],
+  pageIds = [1],
+) {
+  const session = createPageSession({
+    pages: pageIds.map((id) => ({ id, url: `https://page-${id}.example` })),
+    onTool,
+  });
+  setChromeMcpSessionFactoryForTest(() => session);
+  const targets = (await listChromeMcpTabs("chrome-live")).map((tab) => ({
+    profileName: "chrome-live",
+    targetId: tab.targetId,
+  }));
+  return { session, targets };
+}
+
+function snapshotResult(snapshot: ChromeMcpSnapshotNode) {
+  return { structuredContent: { snapshot } };
+}
 
 function buttonDocument(suffix = "", name?: string): ChromeMcpSnapshotNode {
   return {
