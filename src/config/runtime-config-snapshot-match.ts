@@ -1,3 +1,4 @@
+// Config-snapshot comparison: byte-stable serialization plus resolution provenance.
 import { isDeepStrictEqual } from "node:util";
 import { isDeeplyFrozenPlainData } from "../shared/immutable-data.js";
 import { getConfigResolutionFacts, serializeConfigResolutionFacts } from "./resolution-facts.js";

@@ -1,3 +1,4 @@
+// Normalizes user-submitted model config at config mutation boundaries.
 import { AGENT_MODEL_CONFIG_KEYS } from "@openclaw/model-catalog-core/configured-model-refs";
 import {
   normalizeConfiguredProviderCatalogModelId,
