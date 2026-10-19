@@ -13,16 +13,6 @@ import {
   type SessionChangedResult,
   type SessionReconcileOptions,
 } from "./reconcile.ts";
-import type {
-  SessionConnectionOwner,
-  SessionGateway,
-  SessionListScope,
-  SessionRowEventListener,
-  SessionRowListener,
-  SessionRowObservation,
-  SessionRowTarget,
-  SessionState,
-} from "./session-capability.ts";
 import type { createSessionDeletions } from "./session-deletions.ts";
 import type { createSessionGitHubPublication } from "./session-github-publication.ts";
 import {
@@ -38,6 +28,16 @@ import type { createSessionPermissionProjection } from "./session-permission-pro
 import type { createSessionRosterRefresh } from "./session-roster-refresh.ts";
 import { sessionChangedSnapshots, type SessionChangedEventInfo } from "./session-row-reconcile.ts";
 import type { createSessionThinkingClaims } from "./session-thinking-claims.ts";
+import type {
+  SessionConnectionOwner,
+  SessionGateway,
+  SessionListScope,
+  SessionRowEventListener,
+  SessionRowListener,
+  SessionRowObservation,
+  SessionRowTarget,
+  SessionState,
+} from "./session-types.ts";
 
 type Host = {
   readState: () => SessionState;

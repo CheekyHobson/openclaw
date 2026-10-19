@@ -1,6 +1,5 @@
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { mapSessionResultRows } from "./reconcile.ts";
-import type { SessionConnectionOwner, SessionState } from "./session-capability.ts";
 import { areUiSessionKeysEquivalent } from "./session-key.ts";
 import {
   pendingRowIdentity,
@@ -8,6 +7,7 @@ import {
   type PendingRowHost,
 } from "./session-pending-rows.ts";
 import type { createSessionRosterObservations } from "./session-roster-observations.ts";
+import type { SessionConnectionOwner, SessionState } from "./session-types.ts";
 
 export type SessionRowLocalPatchHost = Pick<PendingRowHost, "snapshot"> &
   Pick<ReturnType<typeof createSessionRosterObservations>, "copyRow" | "stageManagedResults"> & {

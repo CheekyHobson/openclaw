@@ -21,13 +21,6 @@ import type {
 } from "./patch.ts";
 import { mapSessionResultRows } from "./reconcile.ts";
 import { createSessionArchiveState, projectSessionArchiveFields } from "./session-archive-state.ts";
-import type {
-  SessionConnectionScope,
-  SessionCreateReconciliation,
-  SessionRefreshOutcome,
-  SessionResetOptions,
-  SessionResetResult,
-} from "./session-capability.ts";
 import { deferSessionMetadataPatch } from "./session-deferred-metadata.ts";
 import { createSessionModelOverrides } from "./session-model-overrides.ts";
 import {
@@ -54,6 +47,13 @@ import {
   requestSessionReset,
 } from "./session-requests.ts";
 import { createSessionRowLocalPatch } from "./session-row-local-patch.ts";
+import type {
+  SessionConnectionScope,
+  SessionCreateReconciliation,
+  SessionRefreshOutcome,
+  SessionResetOptions,
+  SessionResetResult,
+} from "./session-types.ts";
 
 export function createSessionMutations(host: SessionMutationsHost) {
   const reportError = (scope: SessionConnectionScope, error: unknown) => {

@@ -29,7 +29,11 @@ import {
   controlUiPluginDistribution,
   ControlUiPluginAssetPreloads,
 } from "./control-ui-assets.ts";
-import type { ControlUiContributions, ControlUiRegistration } from "./control-ui-capability.ts";
+import type {
+  ControlUiContributions,
+  ControlUiPluginCapability,
+  ControlUiRegistration,
+} from "./control-ui-capability.ts";
 import { controlUiPluginDistributions } from "./control-ui-distribution.ts";
 
 export type ControlUiPluginOwner = {
@@ -72,7 +76,7 @@ function sameSettingsPlacement(a: ControlUiSettingsPlacement, b: ControlUiSettin
   );
 }
 
-export class ControlUiPluginRuntime {
+export class ControlUiPluginRuntime implements ControlUiPluginCapability {
   private readonly owners = new Map<string, ControlUiPluginOwner>();
   private readonly preloads = new ControlUiPluginAssetPreloads();
   private readonly selected = new Map<ControlUiSurface, { key: string; signal: AbortSignal }>();

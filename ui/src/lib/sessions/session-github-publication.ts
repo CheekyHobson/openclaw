@@ -8,17 +8,17 @@ import {
   reconcileSessionChanged,
   reconcileSessionHistory,
 } from "./reconcile.ts";
-import type {
-  GitHubPublicationBinding,
-  SessionConnectionOwner,
-  SessionGateway,
-} from "./session-capability.ts";
 import type { createSessionDeletions } from "./session-deletions.ts";
 import {
   isUiGlobalSessionKey,
   resolveUiConversationIdentity,
   scopedSessionArtifactKey,
 } from "./session-key.ts";
+import type {
+  GitHubPublicationBinding,
+  SessionConnectionOwner,
+  SessionGateway,
+} from "./session-types.ts";
 
 const MAX_RETAINED_PUBLICATIONS = 32;
 

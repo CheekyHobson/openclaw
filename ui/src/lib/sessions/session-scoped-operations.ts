@@ -12,14 +12,14 @@ import type {
   SessionWorkspaceListResult,
   SessionWorkspaceSetResult,
 } from "../../api/types.ts";
+import { areUiSessionKeysEquivalent, normalizeAgentId } from "./session-key.ts";
+import { buildSessionRequestParams } from "./session-requests.ts";
 import type {
   SessionCompactResult,
   SessionConnectionOwner,
   SessionMessageSubscription,
   SessionRefreshOutcome,
-} from "./session-capability.ts";
-import { areUiSessionKeysEquivalent, normalizeAgentId } from "./session-key.ts";
-import { buildSessionRequestParams } from "./session-requests.ts";
+} from "./session-types.ts";
 
 type SessionScopedOperationsHost = {
   connection: SessionConnectionOwner;

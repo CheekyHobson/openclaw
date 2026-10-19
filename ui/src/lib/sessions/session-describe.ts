@@ -1,10 +1,5 @@
 import type { SessionsDescribeParams } from "../../../../packages/gateway-protocol/src/index.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
-import type {
-  SessionConnectionOwner,
-  SessionConnectionScope,
-  SessionRequestClient,
-} from "./session-capability.ts";
 import {
   areUiSessionKeysEquivalent,
   normalizeAgentId,
@@ -15,6 +10,11 @@ import {
   readSessionChangedEvent,
   sessionChangedSnapshots,
 } from "./session-row-reconcile.ts";
+import type {
+  SessionConnectionOwner,
+  SessionConnectionScope,
+  SessionRequestClient,
+} from "./session-types.ts";
 
 type Params = SessionsDescribeParams;
 type Result = { session?: GatewaySessionRow | null };
