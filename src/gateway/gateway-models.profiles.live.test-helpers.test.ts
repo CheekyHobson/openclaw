@@ -6,6 +6,7 @@ import {
   isolateLiveGatewayConfig,
   resolveExplicitLiveModelCandidates,
 } from "./gateway-models.profiles.live.test-helpers.js";
+import { assertOpenAIUltraWireEffort } from "./gateway-models.profiles.live.ultra-wire.test-helpers.js";
 
 vi.mock("../agents/live-provider-owner.js", () => {
   const anthropicOwned = new Set(["anthropic", "claude-cli"]);
@@ -243,4 +244,27 @@ describe("resolveExplicitLiveModelCandidates", () => {
       },
     ]);
   });
+});
+
+it.each([
+  ["low", true],
+  ["max", false],
+])("expects the review effort for Skill Workshop reviews (%s)", (reasoningEffort, accepted) => {
+  const model = "gpt-5.6-sol";
+  const review = {
+    model,
+    reasoningEffort,
+    dispatch: { runId: "skill-workshop-review:review-1", callId: "call-1" },
+  };
+  const assertion = () =>
+    assertOpenAIUltraWireEffort({
+      expectedModel: model,
+      observations: [{ model, reasoningEffort: "max" }, review],
+      ultraRuns: new Map(),
+    });
+  if (accepted) {
+    expect(assertion()).toBeGreaterThan(0);
+  } else {
+    expect(assertion).toThrow(/expected effort=low/);
+  }
 });
