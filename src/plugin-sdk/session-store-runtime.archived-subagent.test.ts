@@ -1,4 +1,7 @@
 import { expect, it, vi } from "vitest";
+import { resolveInheritedToolPolicyForSession } from "../agents/agent-tools.policy.js";
+import { resolvePersistedSubagentToolPolicyEnvelope } from "../agents/subagents/spawn/subagent-capabilities.js";
+import { isToolAllowedByPolicyName } from "../agents/tool-policy-match.js";
 import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import * as sessionAccessor from "../config/sessions/session-accessor.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
@@ -26,7 +29,7 @@ it.each([
   { label: "unscoped caller", caller: "unscoped", pluginOwnerId: "workboard" },
   { label: "missing plugin identity", caller: "unidentified", pluginOwnerId: "workboard" },
 ])(
-  "preserves plugin replacement authority with roles ($label)",
+  "preserves plugin replacement authority and inherited tool limits with roles ($label)",
   async ({ caller, pluginOwnerId }) => {
     await withOpenClawTestState({ label: "archived-worker-roles" }, async () => {
       const config: OpenClawConfig = {
@@ -52,6 +55,17 @@ it.each([
         archivedAt: 1,
         visibility: "draft" as const,
         label: "Private worker",
+        spawnedBy: "agent:requester:main",
+        spawnDepth: 1,
+        inheritedToolPolicyVersion: 1 as const,
+        inheritedToolAllow: ["read", "exec"],
+        inheritedToolDeny: ["exec"],
+        delegatedToolPolicy: {
+          requesterSessionKey: "agent:requester:main",
+          targetAgentId: "main",
+          deny: ["exec"],
+          requesterDeny: ["exec"],
+        },
         ...(pluginOwnerId !== undefined ? { pluginOwnerId } : {}),
       };
       await replaceSessionEntry(scope, entry);
@@ -91,6 +105,21 @@ it.each([
         expect(fresh?.sessionId).not.toBe(entry.sessionId);
         expect(fresh?.archivedAt).toBeUndefined();
         expect(fresh).toMatchObject({ visibility: "draft", label: "Private worker" });
+        const store = { [scope.sessionKey]: fresh ?? {} };
+        const policy = resolveInheritedToolPolicyForSession(config, scope.sessionKey, { store });
+        expect(isToolAllowedByPolicyName("exec", policy)).toBe(false);
+        expect(isToolAllowedByPolicyName("read", policy)).toBe(true);
+        expect(
+          resolvePersistedSubagentToolPolicyEnvelope(scope.sessionKey, { store }),
+        ).toMatchObject({
+          spawnedBy: "agent:requester:main",
+          delegatedToolPolicy: {
+            requesterSessionKey: "agent:requester:main",
+            targetAgentId: "main",
+            deny: ["exec"],
+            requesterDeny: ["exec"],
+          },
+        });
       }
     });
   },

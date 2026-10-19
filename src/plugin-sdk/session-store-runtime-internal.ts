@@ -5,7 +5,10 @@ import {
   applySessionEntryLifecycleMutation,
   type SessionAccessScope,
 } from "../config/sessions/session-accessor.js";
-import { preserveSqliteSameKeySessionRolloverLineage } from "../config/sessions/session-entry-lineage.js";
+import {
+  preserveSessionLineage,
+  preserveSqliteSameKeySessionRolloverLineage,
+} from "../config/sessions/session-entry-lineage.js";
 import { projectPublicSessionEntry } from "../config/sessions/session-entry-projection.js";
 import { preserveCreationStamp } from "../config/sessions/session-entry-provenance.js";
 import {
@@ -118,6 +121,7 @@ export async function replaceArchivedSubagentSession(params: {
                   previous: currentEntry,
                   next: {
                     ...preserveResetSessionPresentation(currentEntry),
+                    ...preserveSessionLineage(currentEntry),
                     sessionId: randomUUID(),
                     lifecycleRevision: randomUUID(),
                     updatedAt: now,

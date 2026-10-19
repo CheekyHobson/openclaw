@@ -538,7 +538,8 @@ surfaces through normal database admission checks; Gateway shutdown cancels the 
 `replaceArchivedSubagentSession({ sessionKey, getConfig, assertCurrent })` from the
 same entrypoint replaces an archived, automation-owned subagent session with a
 fresh incarnation under its canonical key. It returns whether replacement occurred
-and retains the previous transcript, usage lineage, sharing, and presentation choices.
+and retains the previous transcript, usage lineage, inherited tool restrictions,
+sharing, and presentation choices.
 Callers must own the synthetic key; this is not a restore operation for human
 conversations. Replacement requires an active plugin request identity and current
 Gateway authorization to mutate the target session. Missing plugin identities are
