@@ -62,7 +62,7 @@ describe("shell completion health mapping", () => {
     const { profilePath, stateDir } = await setupBashHome();
     await fs.writeFile(profilePath, "source <(openclaw completion --shell bash)\n");
 
-    await expect(checkShellCompletionStatus("openclaw", { shell: "bash" })).resolves.toEqual({
+    await expect(checkShellCompletionStatus()).resolves.toEqual({
       shell: "bash",
       profileInstalled: true,
       cacheExists: false,
@@ -154,13 +154,11 @@ describe("doctorShellCompletion", () => {
       setTestEnvValue("OPENCLAW_STATE_DIR", stateDir);
       setTestEnvValue(COMPLETION_SKIP_PLUGIN_COMMANDS_ENV, "1");
 
-      await expect(
-        ensureCompletionCacheExists("openclaw", { shell: "powershell", generationMode }),
-      ).resolves.toBe(true);
+      await expect(ensureCompletionCacheExists(generationMode)).resolves.toBe(true);
 
       expect(spawnSyncMock).toHaveBeenCalledWith(
         process.execPath,
-        expect.arrayContaining(["completion", "--write-state", "--shell", "powershell"]),
+        expect.arrayContaining(["completion", "--write-state"]),
         expect.any(Object),
       );
       const args = spawnSyncMock.mock.lastCall?.[1] ?? [];

@@ -18,7 +18,7 @@ export async function setupWizardShellCompletion(params: {
   flow: WizardFlow;
   prompter: Pick<WizardPrompter, "confirm" | "note">;
 }): Promise<void> {
-  const completionStatus = await checkShellCompletionStatus(CLI_NAME);
+  const completionStatus = await checkShellCompletionStatus();
   const installCompletionForSetup = async (): Promise<boolean> => {
     try {
       await installCompletion(completionStatus.shell, true, CLI_NAME);
@@ -43,7 +43,7 @@ export async function setupWizardShellCompletion(params: {
     }
   };
   const ensureCompletionCache = async (): Promise<boolean> => {
-    const cacheGenerated = await ensureCompletionCacheExists(CLI_NAME, { generationMode: "full" });
+    const cacheGenerated = await ensureCompletionCacheExists("full");
     if (!cacheGenerated) {
       await params.prompter.note(
         t("wizard.completion.cacheFailed", {

@@ -15,7 +15,6 @@ import {
   resolveCompletionProfilePath,
   resolveShellFromEnv,
   usesSlowDynamicCompletion,
-  type CompletionShell,
 } from "../cli/completion-runtime.js";
 import type { HealthFinding, HealthRepairEffect } from "../flows/health-checks.js";
 import { resolveOpenClawPackageRoot } from "../infra/openclaw-root.js";
@@ -24,13 +23,7 @@ import type { DoctorPrompter } from "./doctor-prompter.js";
 
 const COMPLETION_CACHE_WRITE_TIMEOUT_MS = 30_000;
 
-type ShellCompletionStatusOptions = {
-  shell?: CompletionShell;
-};
-
-export type CompletionCacheGenerationOptions = ShellCompletionStatusOptions & {
-  generationMode: "core-only" | "full";
-};
+type CompletionCacheGenerationMode = "core-only" | "full";
 
 async function installCompletionForDoctor(
   { shell, cachePath }: ShellCompletionStatus,
@@ -58,9 +51,7 @@ async function installCompletionForDoctor(
   }
 }
 
-async function generateCompletionCache(
-  options: CompletionCacheGenerationOptions,
-): Promise<boolean> {
+async function generateCompletionCache(mode: CompletionCacheGenerationMode): Promise<boolean> {
   const root = await resolveOpenClawPackageRoot({
     moduleUrl: import.meta.url,
     argv1: process.argv[1],
@@ -72,12 +63,9 @@ async function generateCompletionCache(
 
   const binPath = path.join(root, "openclaw.mjs");
   const args = ["completion", "--write-state"];
-  if (options.shell) {
-    args.push("--shell", options.shell);
-  }
   const env = { ...process.env };
   // The mode is explicit so ambient repair state cannot silently change a full user-facing cache.
-  if (options.generationMode === "core-only") {
+  if (mode === "core-only") {
     env[COMPLETION_SKIP_PLUGIN_COMMANDS_ENV] = "1";
   } else {
     delete env[COMPLETION_SKIP_PLUGIN_COMMANDS_ENV];
@@ -99,15 +87,12 @@ async function generateCompletionCache(
 
 export type ShellCompletionStatus = Awaited<ReturnType<typeof checkShellCompletionStatus>>;
 
-export async function checkShellCompletionStatus(
-  binName = "openclaw",
-  options: ShellCompletionStatusOptions = {},
-) {
-  const shell = options.shell ?? resolveShellFromEnv();
-  const profileInstalled = await isCompletionInstalled(shell, binName);
-  const cacheExists = await completionCacheExists(shell, binName);
-  const cachePath = resolveCompletionCachePath(shell, binName);
-  const usesSlowPattern = await usesSlowDynamicCompletion(shell, binName);
+export async function checkShellCompletionStatus() {
+  const shell = resolveShellFromEnv();
+  const profileInstalled = await isCompletionInstalled(shell, CLI_NAME);
+  const cacheExists = await completionCacheExists(shell, CLI_NAME);
+  const cachePath = resolveCompletionCachePath(shell, CLI_NAME);
+  const usesSlowPattern = await usesSlowDynamicCompletion(shell, CLI_NAME);
 
   return {
     shell,
@@ -174,7 +159,7 @@ export async function doctorShellCompletion(
   prompter: DoctorPrompter,
   options: { nonInteractive?: boolean } = {},
 ): Promise<void> {
-  const status = await checkShellCompletionStatus(CLI_NAME);
+  const status = await checkShellCompletionStatus();
   const regenerate = !status.usesSlowPattern && status.profileInstalled;
   const [finding] = shellCompletionStatusToHealthFindings(status);
 
@@ -196,7 +181,7 @@ export async function doctorShellCompletion(
   }
 
   if (!status.usesSlowPattern || !status.cacheExists) {
-    const generated = await generateCompletionCache({ generationMode: "core-only" });
+    const generated = await generateCompletionCache("core-only");
     if (!generated) {
       note(
         `Failed to ${regenerate ? "regenerate" : "generate"} completion cache. Run \`${CLI_NAME} completion --write-state\` manually.`,
@@ -214,13 +199,12 @@ export async function doctorShellCompletion(
 
 /** Ensures the shell completion cache exists without prompting during setup/update flows. */
 export async function ensureCompletionCacheExists(
-  binName: string,
-  options: CompletionCacheGenerationOptions,
+  mode: CompletionCacheGenerationMode,
 ): Promise<boolean> {
-  const shell = options.shell ?? resolveShellFromEnv();
-  if (await completionCacheExists(shell, binName)) {
+  const shell = resolveShellFromEnv();
+  if (await completionCacheExists(shell, CLI_NAME)) {
     return true;
   }
 
-  return generateCompletionCache(options);
+  return generateCompletionCache(mode);
 }

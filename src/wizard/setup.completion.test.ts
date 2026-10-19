@@ -140,9 +140,7 @@ describe("setupWizardShellCompletion", () => {
 
       await setupWizardShellCompletion({ flow: "quickstart", prompter });
 
-      expect(deps.ensureCompletionCacheExists).toHaveBeenCalledWith("openclaw", {
-        generationMode: "full",
-      });
+      expect(deps.ensureCompletionCacheExists).toHaveBeenCalledWith("full");
       expect(prompter.note).toHaveBeenCalledWith(
         "Failed to generate completion cache. Run `openclaw completion --write-state --install` later.",
         "Shell completion",

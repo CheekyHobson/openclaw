@@ -98,7 +98,7 @@ export async function tryInstallShellCompletion(opts: {
   }
 
   try {
-    const status = await checkShellCompletionStatus(CLI_NAME);
+    const status = await checkShellCompletionStatus();
     if (status.usesSlowPattern) {
       defaultRuntime.log(theme.muted("Upgrading shell completion to cached version..."));
     } else if (status.profileInstalled) {
@@ -127,7 +127,7 @@ export async function tryInstallShellCompletion(opts: {
         return;
       }
     }
-    if (!(await ensureCompletionCacheExists(CLI_NAME, { generationMode: "core-only" }))) {
+    if (!(await ensureCompletionCacheExists("core-only"))) {
       throw new Error("completion cache generation failed");
     }
     if (status.usesSlowPattern || !status.profileInstalled) {
