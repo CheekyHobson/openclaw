@@ -1,6 +1,7 @@
-import { onCleanup, untrack, type Element } from "solid-js";
+import { onCleanup, type Element } from "solid-js";
 import { Icon } from "../../components/solid/icon.tsx";
 import type { PresentationValue } from "../../lib/presentation.ts";
+import { elementRef } from "../../lib/reactive/element-ref.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import type { ElementProperties } from "../../types/solid-elements.d.ts";
 import type { ChatMobileHost } from "./chat-mobile-host.ts";
@@ -24,10 +25,10 @@ export type PaneDetailsProps = {
 
 export function PaneDetails(props: PaneDetailsProps) {
   const presented = usePanePresentation(() => props.presentation);
-  onCleanup(() => untrack(() => props.setRef(undefined)));
+  onCleanup(() => props.setRef(undefined));
   return (
     <openclaw-chat-details
-      ref={(element) => untrack(() => props.setRef(element))}
+      ref={(element) => props.setRef(element)}
       prop:props={props.chat}
       prop:elements={props.elements}
       prop:mobile={props.mobile}
@@ -73,6 +74,7 @@ export function PaneHeaderPresence(props: PresenceProps) {
     />
   );
 }
+
 
 
 declare module "@solidjs/web" {

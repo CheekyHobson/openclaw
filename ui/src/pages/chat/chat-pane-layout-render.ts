@@ -430,12 +430,12 @@ export abstract class ChatPaneLayoutRender extends ChatPaneHeaderLayout {
       };
     }
     const desktopFocus = this.desktopFocus;
-    sessionWorkspace.onScrollPortRef = this.mobileScrollFades.register;
     const toggleMobilePanel = (slot: SidebarSlotId) =>
       isSidebarSlotVisible(sidebarLayout, slot) ? closePanelSlot(slot) : openPanelSlot(slot);
     const headerWorkspace = mobileHost
       ? {
           ...sessionWorkspace,
+          onScrollPortRef: this.mobileScrollFades.register,
           collapsed: !isSidebarSlotVisible(sidebarLayout, "workspace"),
           onOpenDiff: sessionWorkspace.onOpenDiff
             ? () => {
@@ -454,7 +454,7 @@ export abstract class ChatPaneLayoutRender extends ChatPaneHeaderLayout {
             ? () => toggleMobilePanel("desktop")
             : undefined,
         }
-      : sessionWorkspace;
+      : { ...sessionWorkspace, onScrollPortRef: this.mobileScrollFades.register };
     const desktopPanel = savedLayout.columns[0]?.panels.find((panel) => panel.slot === "desktop");
     const desktopIsMain = desktopPanel !== undefined && desktopPanel.id === savedLayout.mainPanelId;
     const desktopExpanded =

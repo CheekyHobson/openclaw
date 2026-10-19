@@ -203,7 +203,9 @@ export const ChatDetails = defineSolidBridge<Props, Methods>(
         const dividerWidth = Number.parseFloat(style.getPropertyValue("--desktop-divider-reserve"));
         const conversationIsSide =
           frame?.closest("[data-region]")?.getAttribute("data-region") === "side";
-        dockingWidth = pane.getBoundingClientRect().width;
+        // The pane uses border-box sizing; route-entry transforms must not
+        // become the retained conversation width.
+        dockingWidth = Number.parseFloat(style.width);
         if (
           !pane.classList.contains("sidebar-region--bottom") &&
           !pane.classList.contains("sidebar-region--expanded")
@@ -230,7 +232,11 @@ export const ChatDetails = defineSolidBridge<Props, Methods>(
           : undefined;
         const top = Math.max((headerBottom ?? bounds.top) + 8, (viewport?.offsetTop ?? 0) + 8);
         const bottom = Math.min(
-          composer && composer.height > 0 ? composer.bottom : bounds.bottom - 8,
+          docked() && composer && composer.height > 0
+            ? composer.bottom
+            : footerBounds && footerBounds.height > 0
+              ? footerBounds.top - 8
+              : bounds.bottom - 8,
           bounds.bottom - 8,
           (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - 8,
         );
