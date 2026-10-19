@@ -187,19 +187,22 @@ function pruneDecisionFactsAfterInsert(
   if (remaining === 0) {
     return;
   }
-  const retainedIds = kysely
-    .selectFrom("execution_decision_facts")
-    .select("receipt_id")
-    .orderBy("occurred_at", "desc")
-    .orderBy("receipt_id", "desc")
-    .limit(limits.maxRows);
+  // SQLite counts index entries without materializing the retained receipt ids.
+  // Read inside the write transaction so other writers and rollbacks cannot skew it.
+  const rowCount = executeSqliteQueryTakeFirstSync(
+    db,
+    kysely.selectFrom("execution_decision_facts").select(({ fn }) => fn.countAll().as("count")),
+  )!;
+  const overflow = Math.min(remaining, Number(rowCount.count) - limits.maxRows);
+  if (overflow <= 0) {
+    return;
+  }
   const overflowIds = kysely
     .selectFrom("execution_decision_facts")
     .select("receipt_id")
-    .where("receipt_id", "not in", retainedIds)
     .orderBy("occurred_at", "asc")
     .orderBy("receipt_id", "asc")
-    .limit(remaining);
+    .limit(overflow);
   executeSqliteQuerySync(
     db,
     kysely.deleteFrom("execution_decision_facts").where("receipt_id", "in", overflowIds),

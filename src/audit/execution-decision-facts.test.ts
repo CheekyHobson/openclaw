@@ -1,3 +1,4 @@
+import { channel } from "node:diagnostics_channel";
 import { Compile } from "typebox/compile";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -767,6 +768,82 @@ describe("execution decision facts", () => {
         .db.prepare("SELECT COUNT(*) AS count FROM execution_decision_facts")
         .get(),
     ).toEqual({ count: 1 });
+  });
+
+  it("skips overflow deletion below and at the cap using SQLite's fast count", () => {
+    const database = databaseOptions();
+    seedExecutionContext(database);
+    const opened = openOpenClawStateDatabase(database);
+    const statements: string[] = [];
+    const observation = channel("openclaw.database.statement");
+    const observe = (event: unknown) => {
+      if (event && typeof event === "object" && "sql" in event && typeof event.sql === "string") {
+        if (event.sql.includes("execution_decision_facts")) {
+          statements.push(event.sql);
+        }
+      }
+    };
+    observation.subscribe(observe);
+    try {
+      for (const id of ["a", "b", "c"]) {
+        recordExecutionDecisionFactInDatabase(receipt(id), {
+          ...database,
+          database: opened,
+          now: 100,
+          limits: { maxRows: 3, pruneBatchRows: 2 },
+        });
+      }
+    } finally {
+      observation.unsubscribe(observe);
+    }
+    // Only bounded expiry deletes are needed; overflow must do no deletion work.
+    expect(statements.filter((statement) => /^delete from /i.test(statement))).toHaveLength(3);
+    const count = statements.find((statement) => /^select count\(\*\)/i.test(statement));
+    expect(count).toBeDefined();
+    const opcodes = opened.db
+      .prepare(`EXPLAIN ${count}`)
+      .all()
+      .map((row) => row.opcode);
+    expect(opcodes).toContain("Count");
+    expect(opcodes).not.toContain("OpenEphemeral");
+    expect(
+      opened.db
+        .prepare("SELECT receipt_id FROM execution_decision_facts ORDER BY receipt_id")
+        .all(),
+    ).toEqual([{ receipt_id: "a" }, { receipt_id: "b" }, { receipt_id: "c" }]);
+  });
+
+  it("prunes exactly the oldest overflow within the remaining expiry budget", () => {
+    const database = databaseOptions();
+    seedExecutionContext(database);
+    const opened = openOpenClawStateDatabase(database);
+    for (const fact of [
+      receipt("expired", 0),
+      receipt("same-c", 100),
+      receipt("same-a", 100),
+      receipt("same-b", 100),
+      receipt("newer", 101),
+    ]) {
+      recordExecutionDecisionFactInDatabase(fact, { ...database, database: opened, now: 0 });
+    }
+    const options = {
+      ...database,
+      database: opened,
+      now: RETENTION_MS + 1,
+      limits: { maxRows: 3, pruneBatchRows: 2 },
+    };
+    const retained = () =>
+      opened.db
+        .prepare("SELECT receipt_id FROM execution_decision_facts ORDER BY occurred_at, receipt_id")
+        .all()
+        .map((row) => row.receipt_id);
+
+    recordExecutionDecisionFactInDatabase(receipt("newest", 102), options);
+    expect(retained()).toEqual(["same-b", "same-c", "newer", "newest"]);
+    recordExecutionDecisionFactInDatabase(receipt("same-d", 100), options);
+    expect(retained()).toEqual(["same-d", "newer", "newest"]);
+    recordExecutionDecisionFactInDatabase(receipt("backdated", 99), options);
+    expect(retained()).toEqual(["same-d", "newer", "newest"]);
   });
 
   it("turns corrupt retained payloads into bounded unknown receipts", () => {
