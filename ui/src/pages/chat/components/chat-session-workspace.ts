@@ -36,7 +36,11 @@ import type {
   SessionWorkspaceHost,
   SessionWorkspaceState,
 } from "./chat-session-workspace-types.ts";
-import type { SessionWorkspaceProps, FileReaderView, SidebarContent } from "./chat-sidebar-content-types.ts";
+import type {
+  SessionWorkspaceProps,
+  FileReaderView,
+  SidebarContent,
+} from "./chat-sidebar-content-types.ts";
 
 registerFilePreviewEnglish();
 
