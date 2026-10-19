@@ -45,7 +45,10 @@ type WorkboardStore = {
 // Keep the plugin implementation out of core's type graph, as in database conformance tests.
 const { WorkboardStore, registerWorkboardGatewayMethods } = await vi.importActual<{
   WorkboardStore: { openSqlite(workerModuleUrl: URL): WorkboardStore };
-  registerWorkboardGatewayMethods(params: { api: OpenClawPluginApi; store: WorkboardStore }): void;
+  registerWorkboardGatewayMethods: (params: {
+    api: OpenClawPluginApi;
+    store: WorkboardStore;
+  }) => void;
 }>("../../extensions/workboard/runtime-api.js");
 
 it.each([true, false])(
