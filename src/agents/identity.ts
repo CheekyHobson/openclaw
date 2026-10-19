@@ -6,6 +6,7 @@ import { resolveAgentEntry } from "./agent-scope-config.js";
 
 const DEFAULT_ACK_REACTION = "👀";
 
+/** Resolve the configured identity block for one agent. */
 export function resolveAgentIdentity(
   cfg: OpenClawConfig,
   agentId: string,
@@ -91,6 +92,7 @@ export function resolveResponsePrefix(
   return configured === "auto" ? resolveIdentityNamePrefix(cfg, agentId) : configured;
 }
 
+/** Resolve message and response prefix values together for channel delivery. */
 export function resolveEffectiveMessagesConfig(
   cfg: OpenClawConfig,
   agentId: string,

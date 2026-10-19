@@ -1,3 +1,6 @@
+/**
+ * Normalizes timestamps and formats user-facing dates/times for agent prompts.
+ */
 import { execFileSync } from "node:child_process";
 import { resolveDateTimestampMs } from "@openclaw/normalization-core/number-coercion";
 

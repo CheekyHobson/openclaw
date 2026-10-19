@@ -12,12 +12,14 @@ export type {
   RuntimeToolInputSchemaProjection,
 } from "@openclaw/ai/internal/tool-schema";
 
+/** Diagnostic for one incompatible runtime tool schema. */
 export type RuntimeToolSchemaDiagnostic = {
   readonly toolName: string;
   readonly toolIndex: number;
   readonly violations: readonly string[];
 };
 
+/** Runtime tool list split into compatible tools and schema diagnostics. */
 type RuntimeToolSchemaInspection<TTool extends Pick<AnyAgentTool, "name" | "parameters">> = {
   readonly tools: TTool[];
   readonly diagnostics: readonly RuntimeToolSchemaDiagnostic[];

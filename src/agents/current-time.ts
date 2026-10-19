@@ -1,3 +1,6 @@
+/**
+ * Formats cron-style current-time prompt text with local and UTC references.
+ */
 import { resolveDateTimestampMs } from "@openclaw/normalization-core/number-coercion";
 import { formatUserTime, resolveUserTimeFormat, resolveUserTimezone } from "./date-time.js";
 

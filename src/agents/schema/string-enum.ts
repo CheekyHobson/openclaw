@@ -1,4 +1,6 @@
 /**
+ * Provider-safe TypeBox string enum helpers.
+ *
  * Emits flat `enum` schemas instead of `anyOf` unions so provider tool-schema validators accept them.
  */
 import { Type } from "typebox";

@@ -1,3 +1,8 @@
+/**
+ * Channel-owned agent tool and prompt helpers.
+ * Discovers channel tools, message actions, prompt capabilities, reaction
+ * guidance, and weakly-attached channel metadata for wrapped tools.
+ */
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
 import type { ChatType } from "../channels/chat-type.js";
 import { getChannelPlugin, listChannelPlugins } from "../channels/plugins/index.js";
@@ -64,7 +69,9 @@ export function* listChannelSupportedActionsSteps(
   return discovered.actions;
 }
 
+/** List agent tools contributed by registered channel plugins. */
 export function listChannelAgentTools(params: { cfg?: OpenClawConfig }): ChannelAgentTool[] {
+  // Channel docking: aggregate channel-owned tools (login, etc.).
   const tools: ChannelAgentTool[] = [];
   for (const plugin of listChannelPlugins()) {
     const entry = plugin.agentTools;

@@ -6,6 +6,7 @@ import {
   extractToolResultIds,
 } from "../../packages/agent-core/src/harness/session/tool-result-pairing.js";
 /**
+ * Tool call id normalization and extraction helpers.
  *
  * Keeps provider-specific id formats replay-safe while preserving allowed native ids.
  */
