@@ -9,6 +9,7 @@ import type {
   OpenKeyedStoreOptions,
   PluginStateKeyedStore,
 } from "openclaw/plugin-sdk/plugin-state-runtime";
+import { listKnownProviderAuthEnvVarNames } from "openclaw/plugin-sdk/provider-env-vars";
 import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { raceWithTimeout } from "openclaw/plugin-sdk/time-runtime";
 import type {
@@ -153,6 +154,23 @@ async function measureAcpxStartup<T>(
   run: () => T | Promise<T>,
 ): Promise<T> {
   return ctx.startupTrace ? await ctx.startupTrace.measure(name, run) : await run();
+}
+
+/**
+ * ACP harnesses inherit only process essentials, not the Gateway environment.
+ * Name (never echo) provider credentials a setup may have relied on reaching
+ * harnesses implicitly.
+ */
+export function formatUninheritedHarnessCredentialWarning(
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const names = listKnownProviderAuthEnvVarNames()
+    .filter((name) => env[name]?.trim())
+    .toSorted();
+  if (names.length === 0) {
+    return undefined;
+  }
+  return `ACP harnesses do not inherit Gateway credentials; ${names.join(", ")} will not reach them. Sign in each harness with its own login. See https://docs.openclaw.ai/tools/acp-agents-setup#harness-credentials`;
 }
 
 function shouldProbeRuntimeAtStartup(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -371,6 +389,13 @@ export function createAcpxRuntimeService(
         params.backendLifecycle.publish(backend);
         ctx.logger.info(`embedded acpx runtime backend registered (cwd: ${pluginConfig.cwd})`);
       });
+      const credentialWarning =
+        params.startupPurpose === "inspection"
+          ? undefined
+          : formatUninheritedHarnessCredentialWarning();
+      if (credentialWarning) {
+        ctx.logger.warn(credentialWarning);
+      }
 
       if (!shouldProbeRuntime) {
         return;

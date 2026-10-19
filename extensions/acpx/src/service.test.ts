@@ -104,7 +104,10 @@ import {
   openAcpxProcessLeaseStateStore,
   type AcpxProcessLease,
 } from "./process-lease.js";
-import { createAcpxRuntimeService as createRealAcpxRuntimeService } from "./service.js";
+import {
+  createAcpxRuntimeService as createRealAcpxRuntimeService,
+  formatUninheritedHarnessCredentialWarning,
+} from "./service.js";
 import {
   ACPX_GATEWAY_INSTANCE_KEY,
   ACPX_GATEWAY_INSTANCE_MAX_ENTRIES,
@@ -717,4 +720,22 @@ it("catalog-only acquisition and disposal preserve another active runtime lease"
   expect(inspectionShutdown).toHaveBeenCalledOnce();
   expect(primaryShutdown).not.toHaveBeenCalled();
   await owner.stop?.(ctx);
+});
+
+describe("formatUninheritedHarnessCredentialWarning", () => {
+  it("names Gateway credentials that ACP harnesses no longer inherit without echoing values", () => {
+    const warning = formatUninheritedHarnessCredentialWarning({
+      OPENAI_API_KEY: "synthetic-openai-value",
+      PATH: "/usr/bin",
+    });
+    expect(warning).toContain("OPENAI_API_KEY");
+    expect(warning).not.toContain("synthetic-openai-value");
+    expect(warning).not.toContain("PATH");
+  });
+
+  it("stays quiet when no known provider credential is set", () => {
+    expect(
+      formatUninheritedHarnessCredentialWarning({ PATH: "/usr/bin", OPENAI_API_KEY: " " }),
+    ).toBe(undefined);
+  });
 });

@@ -148,6 +148,30 @@ Required sandboxes, required workspace boundaries, and incompatible remote
 execution placement cannot be waived by this confirmation. A restricted user
 must ask an administrator or choose a compatible runtime.
 
+## Harness credentials
+
+ACP harnesses do not inherit the Gateway environment. Codex, Claude, OpenCode,
+Kilo, Qwen, pi and other acpx agents receive only process essentials: `PATH`,
+`HOME`, user and shell, locale, temp directories, `XDG_*`, proxy and TLS trust
+settings, and Windows system variables. The Gateway token and provider keys
+such as `OPENAI_API_KEY` do not reach harnesses, the MCP servers they start, or
+the commands they run.
+
+Sign in each harness with its own login on the Gateway host, for example
+`claude login` or `opencode auth login`. Logins stored under the Gateway user's
+home keep working. The managed OpenClaw tools bridge receives only the
+Gateway's state and config locations.
+
+At startup, OpenClaw logs a warning that names known provider credentials set in
+the Gateway environment, because harnesses no longer receive them. It never logs
+their values.
+
+Environment isolation is not a sandbox. A harness runs as the Gateway's OS
+user, so an agent can still read anything that user can read: OpenClaw state and
+config files, and the Gateway's own `/proc/<pid>/environ` on Linux. To keep
+Gateway credentials away from a harness, run the Gateway as a separate OS user
+or run harnesses in a container or sandbox.
+
 ## Required config
 
 Core ACP baseline:
