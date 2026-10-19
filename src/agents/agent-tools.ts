@@ -1,3 +1,17 @@
+/**
+ * Builds one turn's tool list and records restrictions for work it can create.
+ *
+ * 1. Resolve the turn's identity, workspace and policy. For a child, this policy
+ *    already includes restrictions inherited from its parent.
+ * 2. Assemble coding, Gateway, channel and plugin tools, then apply policy.
+ *    Apply deployment policy after ordinary grants so plugins cannot bypass it.
+ * 3. Record tool limits for future children and scheduled runs. These records
+ *    do not add callable tools to the current turn.
+ * 4. Finalize schemas and execution hooks, and bind the Gateway caller identity.
+ *
+ * Tool factories and policy modules implement each rule; this module orders
+ * their application. Sync and async callers share the same assembly.
+ */
 import { HEARTBEAT_RESPONSE_TOOL_NAME } from "../auto-reply/heartbeat-tool-response.js";
 import { messageToolOwnsVisibleReply } from "../auto-reply/source-reply-delivery-mode.js";
 import { createRuntimeConfigReader } from "../config/runtime-snapshot.js";
@@ -96,7 +110,7 @@ import { prepareSessionPortalToolAccess } from "./tools/session-portal-target.js
 
 export { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
 
-// Both SDK paths assemble the same options; only compatibility resolves delegate policy synchronously.
+// Yield preparation requests so sync and async entry points keep the same policy ordering.
 function* assembleOpenClawCodingTools(
   options?: InternalCodingToolsOptions,
   skillReadResources?: SkillSnapshot["resolvedSkills"],
@@ -350,11 +364,9 @@ function* assembleOpenClawCodingTools(
     capabilityProfile,
     ownerOnlyCoreToolDenylist,
   );
-  // Passed by reference to sessions_spawn and populated after the final policy
-  // pass so child sessions inherit the parent's tool policy.
+  // sessions_spawn captures this array before the final tool list exists.
+  // Populate it after filtering so children inherit the applicable restrictions.
   const inheritedToolAllowlist = options?.inheritedToolAllowlistRef ?? [];
-  const shouldInheritEffectiveToolAllowlist =
-    capabilityProfile.policy.inheritancePolicies.some(hasRestrictiveAllowPolicy);
   const cronCreatorToolAllowlist = options?.cronCreatorToolAllowlistRef ?? [];
   const gatewayCaller = resolveScheduledToolCallerContext({
     scheduledToolPolicy: options?.scheduledToolPolicy,
@@ -552,12 +564,14 @@ function* assembleOpenClawCodingTools(
   });
   // Sender identity is primarily command/action auth, with one Gateway parity exception:
   // explicit non-owner callers never receive owner-only control-plane core tools.
-  const subagentFiltered = messageInvocationPolicy.filter(capabilityProfile, onPolicyFilter);
+  // A child's inherited restrictions are already in capabilityProfile, so it
+  // goes through the same policy pipeline as a top-level turn.
+  const policyFilteredTools = messageInvocationPolicy.filter(capabilityProfile, onPolicyFilter);
   // Host-bound ring-zero tools carry their own authority checks. Agent policy
   // must not deadlock setup, but the tools still receive schema/hook wrappers.
   const grantedTools = applySwarmCollectorToolContract(
     applyDelegationCapability(
-      mergeAgentRingZeroTools(ringZeroTools, subagentFiltered),
+      mergeAgentRingZeroTools(ringZeroTools, policyFilteredTools),
       options?.delegationCapability,
     ),
     {
@@ -566,12 +580,20 @@ function* assembleOpenClawCodingTools(
     },
   );
   const authorizedTools = applyGatewayToolPolicy(grantedTools, options?.config);
-  // Workspace availability belongs to the child. Evaluate delegation against
-  // the parent's policy without constructing a tool the parent cannot use.
+  assertMemoryFlushPersistenceToolAvailable(authorizedTools, options?.memoryFlushTools);
+  authorizedTools.forEach(bindAssembledAgentToolActionDescriptor);
+
+  // Capture restrictions for future children. Any turn can create them,
+  // including a turn that is itself a child.
+  const captureChildAllowlist =
+    capabilityProfile.policy.inheritancePolicies.some(hasRestrictiveAllowPolicy);
   const extraNames = options?.additionalInheritedToolNamesRef ?? [];
   extraNames.length = 0;
+  // A parent may have no repository while its child receives a worktree.
+  // Preserve publication only when the parent's policy permits it; the
+  // child's tool assembly checks its own repository.
   if (
-    (shouldInheritEffectiveToolAllowlist || options?.additionalInheritedToolNamesRef) &&
+    (captureChildAllowlist || options?.additionalInheritedToolNamesRef) &&
     includeOpenClawTools &&
     !isMemoryFlushRun &&
     options?.githubPublicationAvailable === false
@@ -582,14 +604,13 @@ function* assembleOpenClawCodingTools(
     ).filter(({ name }) => isConversationToolAllowed(capabilityProfile, name));
     extraNames.push(...applyGatewayToolPolicy(permitted, options?.config).map((tool) => tool.name));
   }
-  assertMemoryFlushPersistenceToolAvailable(authorizedTools, options?.memoryFlushTools);
-  authorizedTools.forEach(bindAssembledAgentToolActionDescriptor);
-  if (shouldInheritEffectiveToolAllowlist) {
-    // Snapshot exporter only: this copies policy-approved tools for descendants and
-    // never filters the mandatory structured_output tool from this turn.
-    const inheritable = [...authorizedTools, ...extraNames.map((name) => ({ name }))];
-    replaceWithEffectiveToolAllowlist(inheritedToolAllowlist, inheritable);
+  // An empty native allowlist adds no allow restriction; deny rules still apply.
+  if (captureChildAllowlist) {
+    const inheritableTools = [...authorizedTools, ...extraNames.map((name) => ({ name }))];
+    replaceWithEffectiveToolAllowlist(inheritedToolAllowlist, inheritableTools);
   }
+
+  // Scheduled runs separately retain the creator's tools and plugin metadata.
   replaceWithEffectiveCronCreatorToolAllowlist(cronCreatorToolAllowlist, authorizedTools, (tool) =>
     getPluginToolMeta(tool),
   );
