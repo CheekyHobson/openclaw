@@ -93,6 +93,7 @@ export async function appendSessionManagerActor(input: {
   }
   if (outcome.kind === "unknown") {
     const error = new SqliteWorkerError(outcome.error.message, "outcome-unknown");
+    error.cause = outcome.error.cause;
     recordModelFallbackStop(error);
     throw error;
   }

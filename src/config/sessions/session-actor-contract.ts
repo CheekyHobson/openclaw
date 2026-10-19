@@ -292,7 +292,7 @@ export type SessionActorOutcome<Value> =
       kind: "unknown";
       target: SessionActorTarget;
       commandId: string;
-      error: { name: string; message: string };
+      error: { name: string; message: string; cause?: unknown };
     };
 
 export type SessionActorCommitObserver<Value> = {

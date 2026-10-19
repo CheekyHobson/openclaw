@@ -55,6 +55,18 @@ describe("renderAssistantRequestFailureCopy", () => {
     },
   );
 
+  it("gives the same reconciliation guidance in live replies and saved history", () => {
+    const assistant = makeAssistantMessageFixture({
+      ...target,
+      errorMessage: "Session actor requires reconciliation before another command",
+    });
+    const live = formatUserFacingAssistantErrorText(assistant);
+    expect(live).toContain("reopen the conversation");
+    expect(live).toContain("restart OpenClaw");
+    expect(live).not.toContain("Session actor");
+    expect(renderRecordedAssistantFailureCopy(assistant)).toBe(live);
+  });
+
   it("renders loading facts consistently in live replies and saved history without provider prose", () => {
     const assistant = makeAssistantMessageFixture({
       model: "local/model",

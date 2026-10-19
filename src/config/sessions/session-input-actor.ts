@@ -229,12 +229,14 @@ export async function getSessionInputActor(
 export function throwSessionInputActorFailure(
   outcome: {
     kind: "rolled-back" | "stale-version" | "unknown";
-    error: { name: string; message: string };
+    error: { name: string; message: string; cause?: unknown };
   },
   authorityFailure?: unknown,
 ): never {
   if (outcome.kind === "unknown") {
-    throw new SqliteWorkerError(outcome.error.message, "outcome-unknown");
+    const error = new SqliteWorkerError(outcome.error.message, "outcome-unknown");
+    error.cause = outcome.error.cause;
+    throw error;
   }
   if (authorityFailure !== undefined) {
     throw toErrorObject(authorityFailure, "Input actor authority rejected the operation");

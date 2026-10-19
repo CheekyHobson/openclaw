@@ -1,6 +1,9 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { assert, expect, it, vi } from "vitest";
 import { appendSessionManagerActor } from "../../agents/sessions/session-manager-actor-append.js";
+import { formatErrorMessageWithCode } from "../../infra/errors.js";
+import { classifyGatewayStorageFailure } from "../../infra/sqlite-error-diagnostics.js";
+import { SqliteWorkerError } from "../../infra/sqlite-worker-contract.js";
 import { readOpenClawAgentDatabaseIdentity } from "../../state/openclaw-agent-db-identity.js";
 import {
   getOpenClawAgentDatabaseIfOpen,
@@ -22,7 +25,7 @@ import { acquireSessionActorStorage } from "./session-actor-storage-binding.js";
 import { withActor } from "./session-actor-transport.test-support.js";
 import { seedSessionActorOutcomeTransferEntry } from "./session-actor-worker.test-support.js";
 import { createSessionCompoundWorkerFixture } from "./session-compound-worker.test-support.js";
-import { acquireSessionInputActor } from "./session-input-actor.js";
+import { acquireSessionInputActor, throwSessionInputActorFailure } from "./session-input-actor.js";
 
 // mock-isolation: this transport proof does not schedule unrelated maintenance.
 vi.mock("./session-accessor.sqlite-maintenance-kick.js", () => ({
@@ -721,7 +724,17 @@ it.each([false, true])(
   },
 );
 
-it("retains rollback state and fences unknown commits until an explicit read", async () => {
+it.each([
+  [
+    Object.assign(new SqliteWorkerError("SQLite worker stopped", "outcome-unknown"), {
+      cause: Object.assign(new Error("database or disk is full"), { errcode: 13 }),
+    }),
+    "SQLITE_FULL",
+    "unknown",
+  ],
+  [new Error("database or disk is full"), "SQLITE_FULL", "unknown-result"],
+  [new Error("Ordinary reply lost"), "session_actor_reconciliation", "unknown"],
+] as const)("retains the reconciliation cause: %s (%s, %s)", async (cause, expected, reply) => {
   await withActor(async ({ actor, commands, fault }) => {
     const initial = await actor.read(authority);
     if (actor.target.database.kind !== "file") {
@@ -746,7 +759,8 @@ it("retains rollback state and fences unknown commits until an explicit read", a
     const rolledBack = actor.snapshot(authority) ?? (await actor.read(authority));
     expect(rolledBack.entry?.updatedAt).toBe(initial.entry?.updatedAt);
     expect(retained.isCurrent()).toBe(true);
-    fault.reply = "unknown";
+    fault.reply = reply;
+    fault.replyError = cause;
     const unknown = await actor.patch(
       activity("unknown", 456, { expected: rolledBack.version }),
       authority,
@@ -755,9 +769,29 @@ it("retains rollback state and fences unknown commits until an explicit read", a
     expect(retained.isCurrent()).toBe(false);
     expect(actor.snapshot(authority)).toBeUndefined();
     const before = commands.length;
-    expect(
-      (await actor.patch({ commandId: "unknown", phaseId: "turn", reducers: [] }, authority)).kind,
-    ).toBe("unknown");
+    const refused = await actor.patch(
+      { commandId: "unknown", phaseId: "turn", reducers: [] },
+      authority,
+    );
+    assert(refused.kind === "unknown");
+    let failure: unknown;
+    try {
+      throwSessionInputActorFailure(refused);
+    } catch (error) {
+      failure = error;
+    }
+    expect(classifyGatewayStorageFailure(failure)).toBe(expected);
+    const diagnostic = formatErrorMessageWithCode(failure);
+    expect(diagnostic).toContain("Session actor requires reconciliation before another command");
+    expect(diagnostic).toContain(cause.message);
+    await expect(
+      appendSessionManagerActor({
+        actor,
+        toolResult: false,
+        assertCurrent() {},
+        append: messageAppend(actor, initial.entry!.sessionId, { role: "user", content: [] }),
+      }),
+    ).rejects.toSatisfy((error: unknown) => classifyGatewayStorageFailure(error) === expected);
     expect(commands).toHaveLength(before);
     fault.reply = "normal";
     expect((await actor.read(authority)).entry?.updatedAt).toBe(456);

@@ -98,7 +98,7 @@ export function createSqliteSessionActorExecutor(
   } & SessionActorExecutorGuards,
 ): SessionActorExecutor {
   const { target } = params;
-  let fenced = false;
+  let fenced: Extract<SessionActorOutcome<never>, { kind: "unknown" }>["error"] | undefined;
   const authorize = (
     authority: SessionActorAuthority,
     observe?: (
@@ -172,7 +172,7 @@ export function createSqliteSessionActorExecutor(
           if (!snapshot) {
             throw new SessionActorReadInvalidatedError();
           }
-          fenced = false;
+          fenced = undefined;
           params.assertReadable();
           authority.assertCurrent();
           authority.authorize("commit", snapshot);
@@ -225,7 +225,7 @@ export function createSqliteSessionActorExecutor(
         kind: "unknown",
         target,
         commandId: captured.commandId,
-        error: errorFacts(error),
+        error: { ...errorFacts(error), cause: error },
       };
     };
     const preserveFailure = (error: unknown, origin?: "response"): Outcome => {
@@ -251,7 +251,9 @@ export function createSqliteSessionActorExecutor(
           running = (async (): Promise<Outcome> => {
             if (fenced) {
               return unknown(
-                new Error("Session actor requires reconciliation before another command"),
+                new Error("Session actor requires reconciliation before another command", {
+                  cause: fenced.cause,
+                }),
               );
             }
             const pending = params.replica.beginCommand();
@@ -259,6 +261,14 @@ export function createSqliteSessionActorExecutor(
               (value) => ({ ok: true as const, value }),
               (error: unknown) => ({ ok: false as const, error }),
             );
+            const unconfirmed = (message: string) =>
+              unknown(
+                reply.ok
+                  ? new Error(message, {
+                      cause: reply.value.kind === "unknown" ? reply.value.error : undefined,
+                    })
+                  : reply.error,
+              );
             let result: Outcome;
             if (native) {
               const settled = await native.retained.settled;
@@ -337,20 +347,16 @@ export function createSqliteSessionActorExecutor(
                       ? reply.value
                       : { kind: "rolled-back", error: errorFacts(failure) };
               } else {
-                result = unknown(
-                  reply.ok ? new Error("Unconfirmed actor settlement") : reply.error,
-                );
+                result = unconfirmed("Unconfirmed actor settlement");
               }
             } else if (reply.ok && reply.value.kind === "rolled-back") {
               result = reply.value;
             } else {
-              result = unknown(
-                reply.ok ? new Error("Actor command omitted native settlement") : reply.error,
-              );
+              result = unconfirmed("Actor command omitted native settlement");
             }
             if (result.kind === "unknown") {
-              // Fence before returning the physical FIFO permit to a queued command.
-              fenced = true;
+              // Fence the FIFO with the initiating failure, not a later reconciliation refusal.
+              fenced ??= result.error;
             }
             if (result.kind === "stale-version") {
               try {
@@ -435,7 +441,7 @@ export function createSqliteSessionActorExecutor(
       }
     }
     if (outcome.kind === "unknown") {
-      fenced = true;
+      fenced ??= outcome.error;
       params.replica.invalidate();
     }
     return outcome;

@@ -28,7 +28,8 @@ import { createSessionActorWorker } from "./session-actor.worker.js";
 import { createSessionCompoundWorkerFixture } from "./session-compound-worker.test-support.js";
 
 type Fault = {
-  reply: "normal" | "lost" | "unknown";
+  reply: "normal" | "lost" | "unknown" | "unknown-result";
+  replyError?: Error;
   settlementLost?: boolean;
   workerPublicationFailure?: boolean;
   incompleteOutcomeTransfer?: boolean;
@@ -107,7 +108,7 @@ function createFixture() {
             admissions.push(request);
             authorize(request, { admission, retained }, grant);
           });
-          const dropped = fault.reply === "unknown";
+          const dropped = fault.reply === "unknown" || fault.reply === "unknown-result";
           const postMessage = admission.port.postMessage.bind(admission.port);
           const wire = vi
             .spyOn(admission.port, "postMessage")
@@ -165,7 +166,16 @@ function createFixture() {
             }
             fault.onExecuted?.();
             if (fault.reply !== "normal") {
-              throw new Error("Ordinary reply lost");
+              const error = fault.replyError ?? new Error("Ordinary reply lost");
+              if (fault.reply === "unknown-result" && command.type !== "session.actor.read") {
+                return {
+                  kind: "unknown",
+                  target,
+                  commandId: command.input.commandId,
+                  error: { name: error.name, message: error.message },
+                };
+              }
+              throw error;
             }
             return value;
           } finally {
