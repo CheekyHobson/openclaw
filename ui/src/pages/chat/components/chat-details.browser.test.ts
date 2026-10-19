@@ -362,14 +362,17 @@ describe("chat Details presentation", () => {
     expect(document.activeElement).toBe(source);
   });
 
-  it("closes Details after its child menu closes", async () => {
-    const { trigger, panel, progress } = await fixture();
+  it("keeps its child menu open through chat updates and closes Details after it closes", async () => {
+    const { trigger, panel, progress, updateChat } = await fixture();
     trigger.click();
     flush();
     const menu = progress.querySelector<HTMLElement>(".chat-details-progress__menu")!;
     const menuSurface = menu.querySelector<HTMLElement>('[role="menu"]')!;
     menu.querySelector<HTMLButtonElement>("button")!.click();
     await expect.poll(() => menuSurface.dataset.phase).toBe("open");
+    expect(menuSurface.matches(":popover-open")).toBe(true);
+    updateChat({ messages: [] });
+    flush();
     expect(menuSurface.matches(":popover-open")).toBe(true);
     menu.querySelector<HTMLButtonElement>("button")!.click();
     await expect

@@ -51,6 +51,11 @@ const DETAILS_DOCK_MIN_WIDTH = 1200;
 export function ChatDetails(props: ChatDetailsViewProps) {
   let host!: HTMLElement;
   const isPresented = usePanePresentation(() => props.presentation);
+  // Keep unchanged layout inputs stable when the pane publishes new chat data.
+  const isMobile = createMemo(() => props.mobile);
+  const isConversationVisible = createMemo(() => props.conversationVisible !== false);
+  const hasExternalTrigger = createMemo(() => props.externalTrigger ?? false);
+  const layoutElements = createMemo(() => props.elements);
   const presentation = createMemo(
     () =>
       [
@@ -83,7 +88,7 @@ export function ChatDetails(props: ChatDetailsViewProps) {
   const setIntent = (nextIntent: "auto" | "open" | "closed") =>
     setChoice((previous) => ({ ...previous, intent: nextIntent }));
   const [wideEnough, setWideEnough] = createSignal(false);
-  const canDock = () => !props.mobile && props.conversationVisible !== false && wideEnough();
+  const canDock = () => !isMobile() && isConversationVisible() && wideEnough();
   const opened = () => isPresented() && (intent() === "open" || (intent() === "auto" && canDock()));
   // Load on first presentation, then retain disclosure state while closed.
   const [sessionOpened] = createSignal<boolean>((previous) => previous === true || opened());
@@ -106,10 +111,10 @@ export function ChatDetails(props: ChatDetailsViewProps) {
       : trigger;
   let progressMenu: MenuHandle | undefined;
   const readLayout = () => ({
-    mobile: props.mobile,
-    conversationVisible: props.conversationVisible ?? true,
-    externalTrigger: props.externalTrigger ?? false,
-    elements: props.elements,
+    mobile: isMobile(),
+    conversationVisible: isConversationVisible(),
+    externalTrigger: hasExternalTrigger(),
+    elements: layoutElements(),
     presentation: presentation(),
   });
   const mountSurface = ({
@@ -271,7 +276,7 @@ export function ChatDetails(props: ChatDetailsViewProps) {
   };
   createResizeObserver(
     () =>
-      [props.elements?.pane, props.elements?.frame, props.elements?.footer].filter(
+      [layoutElements()?.pane, layoutElements()?.frame, layoutElements()?.footer].filter(
         (element): element is HTMLElement => Boolean(element),
       ),
     reposition,
