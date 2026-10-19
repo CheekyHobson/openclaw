@@ -45,7 +45,7 @@ bundle while production sources are edited.
 Every reload replays the warm visit's persisted sidebar and trimmed v8 transcript
 (after unloading the app), local storage and session storage; the HTTP cache stays warm.
 
-`--warm-reload --probe-dir /path/to/probes` adds cache/paint diagnostics. The probe directory supplies `loaf-mutation.init.js` and
+`--warm-reload --probe-dir /path/to/probes` adds cache/paint diagnostics. The probe directory supplies `mutattr.init.js`, `loaf-mutation.init.js`, and
 `ws-rpc-census.init.js`. The output records cache reads, cached transcript visibility,
 hello, live catch-up, enabled input, layout shifts, mutation batches, and retained
 row elements. Visibility and enabled-input milestones are DOM observations;
@@ -53,10 +53,27 @@ FCP is the browser's paint metric. Diagnostic runs also save filmstrip frames.
 Use `--untraced` for timing comparisons without boot tracing or CPU sampling,
 then collect separate traced runs for the storyboard and attribution.
 
+`--full-uuid-route --off-roster-route` exercises a cached conversation absent from
+the saved routing roster. It removes only that session's routing row from the
+restored sidebar snapshot; the cached sidebar presentation and live responses stay
+unchanged. `snapshotSave.rosterContainsSession` reports the fixture's membership.
+Without this option, a slow handshake can admit the route from the roster and hide
+the full-UUID snapshot admission path.
+
+Use `--method-latency-ms connect=90` to place hello into an early mount task without
+delaying unrelated responses. Each RPC records absolute `requestedAtMs`,
+`scheduledAtMs`, and `receivedAtMs`: received minus scheduled isolates dispatch
+delay from the configured wire delay. Do not treat main-thread receipt as server
+latency or use profiled timings in the untraced comparison.
+
 `--large-snapshot` expands the transcript to 1,100 synthetic messages (about 3 MB),
 including tool results and replay metadata. Combine it with `--warm-reload` to
 exercise a large live history with the current bounded IndexedDB restore. `snapshotSave` reports the persisted row count.
 `--transcript-messages 400` selects a specific positive message count instead.
+Add `--warm-history-delta` to persist a cursor from the initial response and return
+an empty delta on reload, matching an unchanged conversation. This mode fails if
+reload omits the restored cursor. Without it, the
+mock replays the full transcript on every startup; that measures a different flow.
 
 `--session-switch` clicks the first recent session after the other measured phases.
 It opens another 400-message transcript when paired with `--transcript-messages 400`,

@@ -480,7 +480,7 @@ export async function loadChatRoute(
     };
   }
   if (!cached && !preferenceDerived && !revalidation) {
-    const snapshot = await findSnapshotSessionReference(context, target);
+    const snapshot = await findSnapshotSessionReference(context, target, signal);
     signal.throwIfAborted();
     if (snapshot) {
       // Only authority canonicalizes; shortening a dashed UUID here can restart discovery.

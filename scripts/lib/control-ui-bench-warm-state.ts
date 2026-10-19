@@ -6,7 +6,11 @@ type SessionSnapshotStore = {
   flush(): Promise<void>;
 };
 
-type SidebarSnapshotModel = { navigationView: string; onlineUsers: unknown[] };
+type SidebarSnapshotModel = {
+  navigationView: string;
+  onlineUsers: unknown[];
+  roster?: { result: { sessions: Array<{ key: string }> } } | null;
+};
 
 type StoredTranscript = {
   sessionKey: string;
@@ -18,6 +22,7 @@ type StoredSidebar = { sessionKey: string; model: SidebarSnapshotModel };
 export async function persistColdLoadWarmState(input: {
   sessionKey: string;
   sidebarView: "sessions" | "online";
+  offRoster?: boolean;
 }) {
   const pane = document.querySelector(".chat-pane-cache__pane--active");
   const store: SessionSnapshotStore | undefined = pane
@@ -57,6 +62,11 @@ export async function persistColdLoadWarmState(input: {
         "Warm reload requires the selected transcript and sidebar view persisted in IndexedDB",
       );
     }
+    if (input.offRoster && sidebar.model.roster) {
+      // Keep the cached sidebar shape, but force URL discovery to use the transcript snapshot.
+      const result = sidebar.model.roster.result;
+      result.sessions = result.sessions.filter((row) => row.key !== input.sessionKey);
+    }
     return {
       storage: {
         records: { snapshots, sidebarSnapshots: sidebars, snapshotMetadata: metadata },
@@ -68,6 +78,9 @@ export async function persistColdLoadWarmState(input: {
       projectionVersion: record.projectionVersion,
       sidebarView: sidebar.model.navigationView,
       sidebarPeople: sidebar.model.onlineUsers.length,
+      rosterContainsSession: Boolean(
+        sidebar.model.roster?.result.sessions.some((row) => row.key === input.sessionKey),
+      ),
     };
   } finally {
     database.close();

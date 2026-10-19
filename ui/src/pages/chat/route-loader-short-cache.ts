@@ -2,6 +2,8 @@ import { controlUiSessionSlug, SESSION_UUID_SUFFIX_RE } from "@openclaw/session-
 import type { RouteLocation } from "@openclaw/uirouter";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import type { SessionPathTarget } from "../../app-session-route-paths.ts";
+import { waitForGatewayClient } from "../../app/gateway-readiness.ts";
+import { listen } from "../../lib/reactive/listener.ts";
 import {
   consumeSessionNavigationHandoff,
   prepareSessionNavigationHandoff,
@@ -29,6 +31,7 @@ export function sessionKeyUuid(sessionKey: string): string | null {
 export async function findSnapshotSessionReference(
   context: ApplicationContext,
   target: Extract<SessionPathTarget, { kind: "short" }>,
+  signal: AbortSignal,
 ): Promise<{ key: string; agentId: string } | undefined> {
   const reference =
     target.shortId.length === 32
@@ -59,7 +62,24 @@ export async function findSnapshotSessionReference(
   const revision = context.gateway.connectionRevision;
   const { readPrewarmedChatSnapshot } = await import("./session-snapshot-store.ts");
   const admitted = await readPrewarmedChatSnapshot(entry.cacheKey);
+  signal.throwIfAborted();
+  if (admitted && context.gateway.snapshot.phase !== "connected") {
+    // Give the normal hello tail room before mounting; slow/offline links still show cached rows.
+    const waiting = new AbortController();
+    const timeout = setTimeout(() => waiting.abort(), 200);
+    const stopAbort = listen(signal, "abort", () => waiting.abort(signal.reason), { once: true });
+    try {
+      await waitForGatewayClient(context.gateway, waiting.signal);
+    } catch {
+      signal.throwIfAborted();
+    } finally {
+      clearTimeout(timeout);
+      stopAbort();
+    }
+  }
   return admitted &&
+    !entry.cancelled &&
+    peekPrewarmedChatSnapshot() === entry &&
     scopeKey() === entry.cacheKey &&
     context.gateway.connectionRevision === revision
     ? { key, agentId: target.agentId }

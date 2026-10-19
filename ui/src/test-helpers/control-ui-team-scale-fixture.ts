@@ -72,6 +72,7 @@ type FixtureOptions = {
   duplicateBootReads?: boolean;
   closedMenuMembers?: boolean;
   largeSnapshot?: boolean;
+  warmHistoryDelta?: boolean;
   transcriptMessages?: number;
 };
 
@@ -181,16 +182,18 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     largeSnapshot: options.largeSnapshot,
     attachments: duplicateReads?.attachments,
   });
-  const largeHistory = options.largeSnapshot
-    ? {
-        messages: historyMessages,
-        sessionId: pinnedRows[0]!.sessionId,
-        sessionInfo: pinnedRows[0]!,
-        hasMore: false,
-        totalMessages: counts.transcriptMessages,
-        metadata: { models: [] },
-      }
-    : undefined;
+  const initialHistory =
+    options.largeSnapshot || options.warmHistoryDelta
+      ? {
+          messages: historyMessages,
+          sessionId: pinnedRows[0]!.sessionId,
+          sessionInfo: pinnedRows[0]!,
+          hasMore: false,
+          totalMessages: counts.transcriptMessages,
+          metadata: { models: [] },
+          ...(options.warmHistoryDelta ? { deltaCursor: "team-scale-warm-cursor" } : {}),
+        }
+      : undefined;
   const catalogs: SessionCatalog[] = ["codex", "claude"].map((id, catalogIndex) => ({
     id,
     label: id === "codex" ? "Codex" : "Claude Code",
@@ -362,7 +365,7 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
         ? { "session.members.listEvidence": { sessionKey: selectedSessionKey, ...sharingMembers } }
         : {}),
       "question.list": { questions: [] },
-      ...(largeHistory ? { "chat.startup": largeHistory, "chat.history": largeHistory } : {}),
+      ...(initialHistory ? { "chat.startup": initialHistory, "chat.history": initialHistory } : {}),
       ...duplicateReads?.methodResponses,
       "agents.list": agents,
       "agent.identity.get": {
@@ -615,6 +618,15 @@ export function createControlUiTeamScaleFixture(options: FixtureOptions = {}) {
     sidebarListInput,
     cronJobs,
     listCronJobs,
+    warmHistoryDelta: options.warmHistoryDelta
+      ? {
+          kind: "delta",
+          messages: [],
+          sessionId: pinnedRows[0]!.sessionId,
+          deltaCursor: "team-scale-warm-cursor",
+          metadata: { models: [] },
+        }
+      : undefined,
     sidebarLiveChurn: options.sidebarLiveChurn
       ? { equivalentAfterMs: 14_000, quietAfterMs: 15_000, durationMs: 20_000 }
       : undefined,

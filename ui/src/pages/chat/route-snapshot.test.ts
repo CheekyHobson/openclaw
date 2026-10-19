@@ -11,7 +11,7 @@ import {
 } from "./route-resolution.test-support.ts";
 import * as database from "./session-snapshot-database.ts";
 import { clearStoredChatSnapshots } from "./session-snapshot-invalidation.ts";
-import { prewarmChatSnapshot } from "./session-snapshot-prewarm.ts";
+import { discardPrewarmedChatSnapshot, prewarmChatSnapshot } from "./session-snapshot-prewarm.ts";
 import { readPrewarmedChatSnapshot, SessionSnapshotStore } from "./session-snapshot-store.ts";
 
 const prefix = 'scope:["ws://snapshot.example","account-a"]\u0000';
@@ -23,10 +23,75 @@ const snapshot = {
 
 beforeEach(() => vi.stubGlobal("indexedDB", new IDBFactory()));
 afterEach(async () => {
+  vi.useRealTimers();
   await clearStoredChatSnapshots();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
+
+it.each(["hello", "timeout", "abort", "invalidation", "reconnect"] as const)(
+  "bounds snapshot mount waiting and releases its listener on %s",
+  async (outcome) => {
+    const fixture = await setup();
+    await readPrewarmedChatSnapshot(prefix + sessionRouteKey);
+    let revision = 0;
+    Object.defineProperty(fixture.context.gateway, "connectionRevision", { get: () => revision });
+    fixture.publishGateway({ phase: "connecting" });
+    const subscribed = createDeferred<void>();
+    const subscribe = fixture.context.gateway.subscribe;
+    vi.spyOn(fixture.context.gateway, "subscribe").mockImplementation((listener) => {
+      const stop = subscribe(listener);
+      subscribed.resolve();
+      return stop;
+    });
+    vi.useFakeTimers();
+    const initialListeners = fixture.listenerCounts().gateway;
+    const controller = new AbortController();
+    const loading = loadChatRoute(
+      fixture.context,
+      { pathname: `/chat/roboclaw/${sessionRouteUuid}`, search: "", hash: "" },
+      "chat",
+      controller.signal,
+    );
+    expect(
+      await Promise.race([
+        subscribed.promise.then(() => "waiting"),
+        loading.then(() => "admitted"),
+      ]),
+    ).toBe("waiting");
+    expect(fixture.listenerCounts().gateway).toBe(initialListeners + 1);
+    let settled = false;
+    void loading.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    await vi.advanceTimersByTimeAsync(199);
+    expect(settled).toBe(false);
+    if (outcome === "timeout") {
+      await vi.advanceTimersByTimeAsync(1);
+    } else if (outcome === "abort") {
+      const rejected = expect(loading).rejects.toMatchObject({ name: "AbortError" });
+      controller.abort();
+      await rejected;
+    } else {
+      if (outcome === "invalidation") {
+        discardPrewarmedChatSnapshot();
+      } else if (outcome === "reconnect") {
+        revision++;
+      }
+      fixture.publishGateway({ phase: "connected" });
+    }
+    if (outcome !== "abort") {
+      expect(await loading).toMatchObject(
+        outcome === "invalidation" || outcome === "reconnect"
+          ? { kind: "missing-session" }
+          : { kind: "session", sessionResolutionFromCache: "snapshot" },
+      );
+    }
+    expect(fixture.listenerCounts().gateway).toBe(initialListeners);
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
 
 async function setup(key = sessionRouteKey, storedPrefix = prefix) {
   const store = new SessionSnapshotStore();

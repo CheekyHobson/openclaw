@@ -254,6 +254,8 @@ const { values } = parseArgs({
     face: { type: "string", default: "dashboard" },
     "short-route": { type: "boolean", default: false },
     "full-uuid-route": { type: "boolean", default: false },
+    "off-roster-route": { type: "boolean", default: false },
+    "warm-history-delta": { type: "boolean", default: false },
     "frame-gap-ms": { type: "string", default: "4" },
     "sidebar-view": { type: "string", default: "sessions" },
     output: { type: "string", default: ".artifacts/control-ui-cold-load" },
@@ -264,6 +266,12 @@ if (values["streaming-reply"] && values["live-events"]) {
 }
 if (values["warm-reload"] && !values["probe-dir"]) {
   throw new Error("warm-reload requires probe-dir with LoAF/mutation and RPC census init scripts");
+}
+if (values["off-roster-route"] && (!values["warm-reload"] || !values["full-uuid-route"])) {
+  throw new Error("off-roster-route requires warm-reload and full-uuid-route");
+}
+if (values["warm-history-delta"] && !values["warm-reload"]) {
+  throw new Error("warm-history-delta requires warm-reload");
 }
 if (values["sidebar-list-churn"] && !values["live-events"]) {
   throw new Error("sidebar-list-churn requires live-events");
@@ -438,6 +446,7 @@ const fixture = createControlUiTeamScaleFixture({
   duplicateBootReads: values["duplicate-boot-reads"],
   closedMenuMembers: values["closed-menu-members"],
   largeSnapshot: values["large-snapshot"],
+  warmHistoryDelta: values["warm-history-delta"],
   transcriptMessages,
 });
 const streamingReply = values["streaming-reply"] ? createControlUiStreamingReply() : undefined;
@@ -577,8 +586,11 @@ try {
     },
   );
   const warmProbes = values["warm-reload"] ? `\n(${warmReloadProbe.toString()})();` : "";
+  const warmHistory = fixture.warmHistoryDelta
+    ? `if (sessionStorage.getItem("openclaw.bench.warmHistory") === "1") window.openclawControlUiE2eGateway.setRequestHandler("chat.startup", ({ params, respond }) => { if (params.cursor !== "team-scale-warm-cursor") throw new Error("Warm history did not carry its restored cursor"); respond(${JSON.stringify(fixture.warmHistoryDelta)}); });`
+    : "";
   await page.addInitScript({
-    content: `;(() => { if (window !== window.top) return; const __name = (fn) => fn; (${installWidgetReadiness.toString()})(); ${createControlUiMockGatewayInitScript(prepared.scenario)}\n${rigProbeScript}\nwindow.__teamScaleSidebarLists = { apply: (mutation) => window.__teamScaleMutate(mutation) }; window.openclawControlUiE2eGateway.setRequestHandler("sessions.list", async ({ params, respond }) => respond(await window.__teamScaleList(params))); window.openclawControlUiE2eGateway.setRequestHandler("cron.list", async ({ params, respond }) => respond(await window.__teamScaleCronList(params)));\n${createColdLoadProbeInitScript({ latencyMs, methodLatencyMs, frameGapMs, events: fixture.events, liveEvents: fixture.liveEvents, liveHistory: fixture.liveHistory, ownerProbes: !cpuProfile && !values["session-event-churn"] })}\n${streamingReply ? createStreamingReplyProbeInitScript() : ""}\n${extraInitScripts.join("\n")}\n${warmProbes} })();`,
+    content: `;(() => { if (window !== window.top) return; const __name = (fn) => fn; (${installWidgetReadiness.toString()})(); ${createControlUiMockGatewayInitScript(prepared.scenario)}\n${rigProbeScript}\nwindow.__teamScaleSidebarLists = { apply: (mutation) => window.__teamScaleMutate(mutation) }; window.openclawControlUiE2eGateway.setRequestHandler("sessions.list", async ({ params, respond }) => respond(await window.__teamScaleList(params))); window.openclawControlUiE2eGateway.setRequestHandler("cron.list", async ({ params, respond }) => respond(await window.__teamScaleCronList(params)));\n${createColdLoadProbeInitScript({ latencyMs, methodLatencyMs, frameGapMs, events: fixture.events, liveEvents: fixture.liveEvents, liveHistory: fixture.liveHistory, ownerProbes: !cpuProfile && !values["session-event-churn"] })}\n${warmHistory}\n${streamingReply ? createStreamingReplyProbeInitScript() : ""}\n${extraInitScripts.join("\n")}\n${warmProbes} })();`,
   });
   const url = values["full-uuid-route"]
     ? new URL(
@@ -678,12 +690,16 @@ try {
   const warmInput: Parameters<typeof persistColdLoadWarmState>[0] = {
     sessionKey: fixture.selectedSessionKey,
     sidebarView: sidebarView === "online" ? "online" : "sessions",
+    offRoster: values["off-roster-route"],
   };
   await page.evaluate("globalThis.__name = (fn) => fn");
   const { storage: warmStorage, ...snapshotSave } = await page.evaluate(
     persistColdLoadWarmState,
     warmInput,
   );
+  if (values["warm-history-delta"]) {
+    warmStorage.session.push(["openclaw.bench.warmHistory", "1"]);
+  }
   for (let index = 1; index < bundleSlots.length; index++) {
     await restoreColdLoadWarmState(page, warmStorage);
     await selectComparisonBundle(index);
@@ -1338,6 +1354,9 @@ try {
         face,
         shortRoute: values["short-route"],
         fullUuidRoute: values["full-uuid-route"],
+        offRosterRoute: values["off-roster-route"],
+        warmHistoryDelta: values["warm-history-delta"],
+        largeSnapshot: values["large-snapshot"],
         frameGapMs,
         captureMs,
         sessionEventDurationMs,
