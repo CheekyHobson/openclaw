@@ -332,8 +332,8 @@ export function resolveVisibleActiveSessionRunState(
   // liveness vote. Include hidden/queued refs in representation, not visibility.
   const representedLocally =
     localOperations.length > 0 &&
-    (params.trackedRpcSources ?? listRpcSourceEntries()).some(([, ref]) => {
-      const operation = ref.input.claim?.operation;
+    (params.trackedRpcSources ?? listRpcSourceEntries()).some((registration) => {
+      const operation = registration[1].input.claim?.operation;
       return operation !== undefined && localOperations.includes(operation);
     });
   // Native attempts without RPC metadata still belong to one captured physical owner.
