@@ -55,10 +55,7 @@ import { assertOpenClawDatabasesReady } from "../../state/openclaw-database-pref
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { useSessionStoreTempDirs } from "../../test-utils/session-state-cleanup.js";
 import { createAgentRunDirectAbortError } from "../run-termination.js";
-import {
-  readStartupRecoveryWarning,
-  recordStartupRecoveryStoreResult,
-} from "./main-session-restart-recovery-diagnostics.js";
+import { readStartupRecoveryWarning } from "./main-session-restart-recovery-diagnostics.js";
 import {
   markRestartAbortedMainSessions,
   markStartupOrphanedMainSessionsForRecovery,
@@ -349,37 +346,25 @@ it("keeps healthy stores recoverable when an earlier startup mark fails", async 
     const replacementSpy = vi
       .spyOn(sessionAccessor, "applySessionEntryReplacements")
       .mockRejectedValueOnce(new Error("startup store temporarily locked"));
-    try {
-      const result = await markStartup(startupCheckedStorePaths);
-      expect(readMain("worker")?.abortedLastRun).toBe(true);
-      expect(readMain()?.abortedLastRun).toBe(false);
-      expect(startupCheckedStorePaths).toEqual(
-        new Set([
-          JSON.stringify(["worker", path.join(state.sessionsDir("worker"), "sessions.json")]),
-        ]),
-      );
-      expect(result.failedTargets).toEqual([
-        { agentId: "main", storePath: path.join(state.sessionsDir("main"), "sessions.json") },
-      ]);
-      expect(readStartupRecoveryWarning()).toContain("startup store temporarily locked");
-      expect(readStartupRecoveryWarning(false)).not.toContain("startup store temporarily locked");
-      rotateAgentEventLifecycleGeneration();
-      expect(readStartupRecoveryWarning()).toContain("startup store temporarily locked");
+    const result = await markStartup(startupCheckedStorePaths);
+    expect(readMain("worker")?.abortedLastRun).toBe(true);
+    expect(readMain()?.abortedLastRun).toBe(false);
+    expect(startupCheckedStorePaths).toEqual(
+      new Set([
+        JSON.stringify(["worker", path.join(state.sessionsDir("worker"), "sessions.json")]),
+      ]),
+    );
+    expect(result.failedTargets).toEqual([
+      { agentId: "main", storePath: path.join(state.sessionsDir("main"), "sessions.json") },
+    ]);
+    expect(readStartupRecoveryWarning()).toContain("startup store temporarily locked");
+    expect(readStartupRecoveryWarning(false)).not.toContain("startup store temporarily locked");
 
-      replacementSpy.mockImplementation(apply);
-      await markStartup(startupCheckedStorePaths);
-      expect(readMain()?.abortedLastRun).toBe(true);
-      expect(startupCheckedStorePaths.size).toBe(2);
-      expect(readStartupRecoveryWarning()).toBeUndefined();
-    } finally {
-      recordStartupRecoveryStoreResult({
-        target: {
-          agentId: "main",
-          storePath: path.join(state.sessionsDir("main"), "sessions.json"),
-        },
-        outcome: { ok: true },
-      });
-    }
+    replacementSpy.mockImplementation(apply);
+    await markStartup(startupCheckedStorePaths);
+    expect(readMain()?.abortedLastRun).toBe(true);
+    expect(startupCheckedStorePaths.size).toBe(2);
+    expect(readStartupRecoveryWarning()).toBeUndefined();
   });
 });
 
@@ -415,14 +400,8 @@ it.each(["before", "after"] as const)(
       } finally {
         releaseAgentRunContext(runId, claimId);
         clearAgentRunContext(runId, lifecycleGeneration);
-        recordStartupRecoveryStoreResult({
-          target: {
-            agentId: "main",
-            storePath: path.join(state.sessionsDir("main"), "sessions.json"),
-          },
-          outcome: { ok: true },
-        });
         rotateAgentEventLifecycleGeneration();
+        expect(readStartupRecoveryWarning()).toBeUndefined();
       }
     });
   },

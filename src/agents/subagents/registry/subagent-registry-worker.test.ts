@@ -653,7 +653,7 @@ it("settles a requester cohort while many children finish and one is killed", as
   expect([...saved.values()].every((row) => row.requesterSettleWake === undefined)).toBe(true);
 });
 
-it("installs planned postimages and runtime custody before notifying every projection", async () => {
+it("installs captured raw postimages and runtime custody before notifying every projection", async () => {
   vi.stubEnv("OPENCLAW_TEST_READ_SUBAGENT_RUNS_FROM_SQLITE", "1");
   await register(entry("changed"), entry("removed"));
   await restoreSubagentRunsFromDisk({ runs: subagentRuns });
@@ -701,6 +701,7 @@ it("installs planned postimages and runtime custody before notifying every proje
   );
   try {
     await awaitGateBeforeSettlement(reached.promise, pending, "publication missed ACK gate");
+    draft.label = "uncommitted caller edit";
     expect(events).toEqual([]);
     expect(subagentRuns.has("removed")).toBe(true);
     release.resolve();

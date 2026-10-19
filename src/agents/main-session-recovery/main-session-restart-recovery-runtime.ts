@@ -232,8 +232,12 @@ async function recoverExpectedRestartRecovery(
     gatewayRuntime: GatewayRecoveryRuntime;
   },
 ): Promise<RecoveryCounts> {
+  const expected = {
+    ...params.expectedTarget,
+    claim: params.expectedTarget.claim && { ...params.expectedTarget.claim },
+  };
   const current = await prepareExpectedRestartRecoveryCurrent({
-    expected: params.expectedTarget,
+    expected,
     storePath: params.storePath,
   });
   using _ = { [Symbol.dispose]: current.release };

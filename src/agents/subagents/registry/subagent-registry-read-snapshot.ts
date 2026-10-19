@@ -262,9 +262,9 @@ export async function prepareSubagentSessionRunReadSnapshot(params: {
   const { inMemoryRuns, fullCache } = params;
   const context = params.context ?? captureOpenClawStateWorkerContext();
   const signal = getAsyncWorkSignal();
-  const roots = [
-    ...new Set(params.sessionKeys.map((key) => key.trim()).filter(Boolean)),
-  ].toSorted();
+  const roots = Object.freeze(
+    [...new Set(params.sessionKeys.map((key) => key.trim()).filter(Boolean))].toSorted(),
+  );
   const links = getSubagentSessionReadLookup(inMemoryRuns).captureTopology();
   const reply = await executeExistingOpenClawStateRead(
     { path: context.admission.databasePath, env: context.environment },

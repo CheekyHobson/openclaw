@@ -655,7 +655,7 @@ function createRun(runId: string): SubagentRunRecord {
   };
 }
 
-it("commits planned registry rows without host SQL", async () => {
+it("commits captured registry rows without host SQL", async () => {
   await withEnvAsync({ OPENCLAW_STATE_DIR: dirs.make("openclaw-registry-worker-") }, async () => {
     const retained = createRun("retained");
     const removed = createRun("removed");
@@ -729,6 +729,10 @@ it("commits planned registry rows without host SQL", async () => {
       expect(
         await Promise.race([captured.promise.then(() => "captured"), write.then(() => "settled")]),
       ).toBe("captured");
+      queued.task = "mutated after capture";
+      queued.queuedLaunch.request.task = "mutated descriptor";
+      terminal.completion.resultText = "mutated result";
+      terminalReply.text = "mutated reply";
       expect(runs.has(queued.runId)).toBe(false);
       expect(runs.has(removed.runId)).toBe(true);
       release.resolve();

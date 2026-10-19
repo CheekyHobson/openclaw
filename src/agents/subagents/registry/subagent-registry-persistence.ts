@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { assertSessionEntryCurrentAdmission } from "../../../config/sessions/session-entry-current-admission.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
@@ -342,7 +343,7 @@ async function commitRows<T>(
     writeId: randomUUID(),
     values,
     deleteRunIds: [...postimages].flatMap(([id, row]) => (row ? [] : [id])),
-    terminalEvents: planned.terminalEvents?.map(({ input }) => input),
+    terminalEvents: planned.terminalEvents?.map(({ input }) => structuredClone(input)),
   };
   if (!values.length && !write.deleteRunIds.length && !write.terminalEvents?.length) {
     authority.assertCurrent();
@@ -464,6 +465,10 @@ export async function mutateSubagentRuns<P extends SubagentRunMutation<unknown>>
       }
     }
     const planned = plan(rows);
+    if (isPromiseLike(planned)) {
+      void Promise.resolve(planned).catch(() => {});
+      throw new Error("Subagent mutation plans must remain synchronous");
+    }
     for (const [id, row] of planned.postimages ?? []) {
       if (!pending.runIds.has(id) || (row && row.runId !== id)) {
         throw new SubagentRegistryMutationRejectedError(
