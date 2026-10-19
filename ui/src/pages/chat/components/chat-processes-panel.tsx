@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onSettled } from "solid-js";
+import { For, Show, createMemo, createSignal, onSettled } from "solid-js";
 import type { SessionProcessSummary } from "../../../../../packages/gateway-protocol/src/schema/session-processes.js";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { PanelEmptyState } from "../../../components/solid/panel-empty-state.tsx";
@@ -28,11 +28,7 @@ export const ChatProcessesPanel = defineSolidBridge<ChatProcessesPanelProps>(
   (props, host) => {
     const [finishedOpen, setFinishedOpen] = createSignal(false);
     let list!: HTMLDivElement;
-    let listTop = 0;
-    let returnInstance: string | null = null;
-    const openers = new Map<string, HTMLButtonElement>();
-    // Presentation offsets only: output bytes and retention remain owned by ProcessesPanelData.
-    const outputPositions = new Map<string, { left: number; top: number }>();
+
     const listScrollState = useScrollState();
     const panel = useSessionPanel(
       host,
@@ -40,36 +36,41 @@ export const ChatProcessesPanel = defineSolidBridge<ChatProcessesPanelProps>(
       ProcessesPanelData,
       (identityChanged) => {
         if (identityChanged) {
-          returnInstance = null;
-          listTop = 0;
-          outputPositions.clear();
-          openers.clear();
+          setNavigation(emptyNavigation());
           if (list) {
             list.scrollTop = 0;
           }
-          setSelected(null);
         }
       },
     );
     const data = () => panel().snapshot;
-    // Missing retained rows keep their detail state; access loss closes private output.
-    const [selected, setSelected] = createSignal<string | null>((previous) =>
-      data().error && !data().rows.length ? null : (previous ?? null),
+    // Only local return targets/offsets reset on denied access; output remains with the data owner.
+    const emptyNavigation = (): {
+      listTop: number;
+      selected: string | null;
+      returnInstance: string | null;
+      openers: Map<string, HTMLButtonElement>;
+      outputPositions: Map<string, { left: number; top: number }>;
+    } => ({
+      listTop: 0,
+      selected: null,
+      returnInstance: null,
+      openers: new Map<string, HTMLButtonElement>(),
+      outputPositions: new Map<string, { left: number; top: number }>(),
+    });
+    const denied = createMemo(() => Boolean(data().error && !data().rows.length));
+    const [navigation, setNavigation] = createSignal<ReturnType<typeof emptyNavigation>>(
+      (previous) => (denied() ? emptyNavigation() : (previous ?? emptyNavigation())),
     );
-    createEffect(
-      () => Boolean(data().error && !data().rows.length),
-      (denied) => {
-        if (denied) {
-          returnInstance = null;
-          outputPositions.clear();
-          openers.clear();
-        }
-      },
-    );
+    // Rendered selection observes denial transitions even while the detail is closed.
+    const selected = () => navigation().selected;
     const open = (row: SessionProcessSummary) => {
-      listTop = list.scrollTop;
-      returnInstance = row.instanceId;
-      setSelected(row.instanceId);
+      setNavigation((previous) => ({
+        ...previous,
+        listTop: list.scrollTop,
+        returnInstance: row.instanceId,
+        selected: row.instanceId,
+      }));
     };
     const selectedRow = createMemo(() => data().rows.find((row) => row.instanceId === selected()));
     const running = createMemo(() => data().rows.filter((row) => row.status === "running"));
@@ -133,7 +134,8 @@ export const ChatProcessesPanel = defineSolidBridge<ChatProcessesPanelProps>(
     const rowView = (row: () => SessionProcessSummary) => {
       onSettled(() => {
         const id = row().instanceId;
-        return () => openers.delete(id);
+        const initialOpeners = navigation().openers;
+        return () => initialOpeners.delete(id);
       });
       return (
         <div
@@ -156,7 +158,7 @@ export const ChatProcessesPanel = defineSolidBridge<ChatProcessesPanelProps>(
                   title={row().name}
                   aria-label={row().name}
                   ref={(element) => {
-                    openers.set(row().instanceId, element);
+                    navigation().openers.set(row().instanceId, element);
                   }}
                   onClick={() => open(row())}
                 >
@@ -211,7 +213,7 @@ export const ChatProcessesPanel = defineSolidBridge<ChatProcessesPanelProps>(
                 type="button"
                 aria-label={row().name}
                 ref={(element) => {
-                  openers.set(row().instanceId, element);
+                  navigation().openers.set(row().instanceId, element);
                 }}
                 onClick={() => open(row())}
               >
@@ -249,7 +251,7 @@ export const ChatProcessesPanel = defineSolidBridge<ChatProcessesPanelProps>(
       const savePosition = () => {
         const id = selected();
         if (id && output) {
-          outputPositions.set(id, { left: output.scrollLeft, top: output.scrollTop });
+          navigation().outputPositions.set(id, { left: output.scrollLeft, top: output.scrollTop });
         }
       };
       onSettled(() => {
@@ -258,7 +260,7 @@ export const ChatProcessesPanel = defineSolidBridge<ChatProcessesPanelProps>(
       const Output = (outputProps: { row: SessionProcessSummary }) => {
         const scrollState = useScrollState();
         onSettled(() => {
-          const position = outputPositions.get(outputProps.row.instanceId);
+          const position = navigation().outputPositions.get(outputProps.row.instanceId);
           if (position) {
             output.scrollLeft = position.left;
             output.scrollTop = position.top;
@@ -319,12 +321,15 @@ export const ChatProcessesPanel = defineSolidBridge<ChatProcessesPanelProps>(
                 title={props.mobile ? undefined : t("chat.processesPanel.back")}
                 onClick={() => {
                   savePosition();
-                  setSelected(null);
+                  setNavigation((previous) => ({ ...previous, selected: null }));
                   onSettled(() => {
-                    list.scrollTop = listTop;
-                    const opener = returnInstance ? openers.get(returnInstance) : undefined;
+                    const current = navigation();
+                    list.scrollTop = current.listTop;
+                    const opener = current.returnInstance
+                      ? current.openers.get(current.returnInstance)
+                      : undefined;
                     (opener?.isConnected ? opener : list).focus({ preventScroll: true });
-                    returnInstance = null;
+                    current.returnInstance = null;
                   });
                 }}
               >
