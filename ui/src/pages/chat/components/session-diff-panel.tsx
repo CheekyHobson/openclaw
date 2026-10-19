@@ -1,5 +1,4 @@
 import {
-  untrack,
   createEffect,
   createMemo,
   createSignal,
@@ -61,19 +60,12 @@ function SessionDiffContent(props: SessionDiffProps) {
   const preferences = loadSessionDiffPreferences();
   const [collapsedPaths, setCollapsedPaths] = createSignal(new Set<string>());
   const [menu, setMenu] = createSignal<SessionDiffMenuData | null>(null);
-  // Seed the first render; the scoped effect below owns later request changes.
-  const initialScope = untrack(() =>
-    props.scopeRequest?.owner === props.owner ? props.scopeRequest?.scope : null,
-  );
-  const [scope, setScope] = createSignal<SessionDiffScope>(initialScope ?? { scope: "all" });
-  createEffect(
-    () => ({ request: props.scopeRequest, owner: props.owner }),
-    ({ request, owner }) => {
-      if (request && request.owner === owner) {
-        setScope(request.scope);
-      }
-    },
-  );
+  // Local scope choices survive until a new request from this owner arrives.
+  const [scope, setScope] = createSignal<SessionDiffScope>((previous) => {
+    const request = props.scopeRequest;
+    const owner = props.owner;
+    return request?.owner === owner ? request.scope : (previous ?? { scope: "all" });
+  });
   const [split, setSplit] = createSignal(preferences.split);
   const [wrap, setWrap] = createSignal(preferences.wrap);
   // The approved mobile cards start wrapped; desktop keeps its saved preference.
@@ -90,6 +82,7 @@ function SessionDiffContent(props: SessionDiffProps) {
   let treeSearch: HTMLInputElement | undefined;
   let treeSearchTrigger: HTMLButtonElement | undefined;
   const fileElements = new Map<string, HTMLElement>();
+  const fileToggles = new Map<string, () => HTMLButtonElement | undefined>();
   const effectiveSplit = () =>
     desktop() ? mode() === "split" || (mode() === "auto" && wide()) : split();
   function savePreferences(next: Partial<typeof preferences>) {
@@ -269,10 +262,7 @@ function SessionDiffContent(props: SessionDiffProps) {
     // must settle before focus moves to the selected file.
     flush();
     fileElements.get(path)?.scrollIntoView({ block: "start" });
-    fileElements
-      .get(path)
-      ?.querySelector<HTMLButtonElement>(".session-diff__file-toggle")
-      ?.focus({ preventScroll: true });
+    fileToggles.get(path)?.()?.focus({ preventScroll: true });
   }
   function toggleFile(path: string) {
     const collapsing = !collapsedPaths().has(path);
@@ -516,6 +506,7 @@ function SessionDiffContent(props: SessionDiffProps) {
     codePresentations.set(path, presentation);
     return () => {
       fileElements.delete(path);
+      fileToggles.delete(path);
       if (codePresentations.get(path) === presentation) {
         codePresentations.delete(path);
       }
@@ -555,8 +546,9 @@ function SessionDiffContent(props: SessionDiffProps) {
     canExpandGaps,
     collapseGap,
     registerPresentation,
-    registerFileElement: (path, element) => {
+    registerFileElement: (path, element, toggle) => {
       fileElements.set(path, element);
+      fileToggles.set(path, toggle);
     },
     setTreeSearch: (element) => {
       treeSearch = element;
