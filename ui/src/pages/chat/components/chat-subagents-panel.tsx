@@ -1,8 +1,9 @@
-import { Show, createEffect, createMemo, createSignal } from "solid-js";
+import { Show, createMemo, createSignal } from "solid-js";
 import type { ChatInputRegion } from "../../../app/chat-input-owner.ts";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { formatDurationCompact } from "../../../lib/format-duration.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
+import { createPendingFocus } from "../../../lib/reactive/pending-focus.ts";
 import { resolveSessionDisplayName } from "../../../lib/session-display.ts";
 import { isSessionRunStateActive } from "../../../lib/session-run-state.ts";
 import { parseAgentSessionKey } from "../../../lib/sessions/session-key.ts";
@@ -43,6 +44,8 @@ export const ChatSubagentsPanel = defineSolidBridge<Props>(
     const [finishedOpen, setFinishedOpen] = createSignal(true);
     const finishedId = `chat-subagents-finished-${++panelSequence}`;
     let mobileList: HTMLDivElement | undefined;
+    let mobileFirstButton: (() => HTMLButtonElement | undefined) | undefined;
+    let mobileRetry: HTMLButtonElement | undefined;
     let mobileReturn: { scrollTop: number; focus: HTMLElement | null } | undefined;
     const data = useSessionPanel(
       host,
@@ -88,18 +91,27 @@ export const ChatSubagentsPanel = defineSolidBridge<Props>(
         }
       }
     }
-    createEffect(
-      () => props.mobile === true && !selected() && props.presented,
-      (active) => {
-        if (active && mobileList && mobileReturn) {
-          mobileList.scrollTop = mobileReturn.scrollTop;
-          const target = mobileReturn.focus;
-          (target?.isConnected && mobileList.contains(target)
-            ? target
-            : mobileList.querySelector<HTMLElement>("button")
-          )?.focus({ preventScroll: true });
-          mobileReturn = undefined;
-        }
+    createPendingFocus(
+      () => ({
+        active: props.mobile === true && !selected() && props.presented,
+        request: mobileReturn,
+      }),
+      {
+        requested: (next) => Boolean(next.request),
+        ready: (next) => next.active && Boolean(mobileList),
+        focus: ({ request }) => {
+          if (mobileList && request) {
+            mobileList.scrollTop = request.scrollTop;
+            const target = request.focus;
+            (target?.isConnected && mobileList.contains(target)
+              ? target
+              : mobileRetry?.isConnected
+                ? mobileRetry
+                : mobileFirstButton?.()
+            )?.focus({ preventScroll: true });
+            mobileReturn = undefined;
+          }
+        },
       },
     );
     const unfinished = (row: SubagentsPanelRow) =>
@@ -222,8 +234,9 @@ export const ChatSubagentsPanel = defineSolidBridge<Props>(
               finishedOpen={finishedOpen()}
               onToggleFinished={() => setFinishedOpen((value) => !value)}
               loading={data().loading}
-              listRef={(element) => {
+              listRef={(element, firstButton) => {
                 mobileList = element;
+                mobileFirstButton = firstButton;
               }}
               onOpen={(key) => {
                 const focus = mobileList?.ownerDocument.activeElement;
@@ -237,7 +250,14 @@ export const ChatSubagentsPanel = defineSolidBridge<Props>(
                 data().error && (
                   <div class="chat-subagents__error" role="alert">
                     <span>{data().error}</span>
-                    <button class="btn btn--sm" type="button" onClick={() => void data().refresh()}>
+                    <button
+                      ref={(button) => {
+                        mobileRetry = button;
+                      }}
+                      class="btn btn--sm"
+                      type="button"
+                      onClick={() => void data().refresh()}
+                    >
                       {t("common.retry")}
                     </button>
                   </div>
