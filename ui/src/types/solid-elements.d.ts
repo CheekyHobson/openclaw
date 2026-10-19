@@ -38,6 +38,11 @@ declare module "@solidjs/web" {
       messageActions: MessageActionDetails | null | undefined;
     }
     interface IntrinsicElements {
+      "openclaw-panel-empty-state": HTMLAttributes<HTMLElement>;
+      "openclaw-panel-loading-skeleton": HTMLAttributes<HTMLElement> & {
+        compact?: string;
+        overlay?: string;
+      };
       "openclaw-chat-sent-comments": HTMLAttributes<HTMLElement>;
       "openclaw-chat-sources": HTMLAttributes<HTMLElement>;
       "openclaw-chat-summary-automations": HTMLAttributes<HTMLElement>;
