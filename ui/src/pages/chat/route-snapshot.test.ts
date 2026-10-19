@@ -37,7 +37,7 @@ it.each(["hello", "timeout", "abort", "invalidation", "reconnect"] as const)(
     let revision = 0;
     Object.defineProperty(fixture.context.gateway, "connectionRevision", { get: () => revision });
     fixture.publishGateway({ phase: "connecting" });
-    const subscribed = createDeferred<void>();
+    const subscribed = createDeferred();
     const subscribe = fixture.context.gateway.subscribe;
     vi.spyOn(fixture.context.gateway, "subscribe").mockImplementation((listener) => {
       const stop = subscribe(listener);
