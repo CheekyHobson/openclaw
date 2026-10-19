@@ -16,13 +16,15 @@ import {
 } from "./session-store-runtime.js";
 
 it.each([
-  { label: "system owner", scoped: false, pluginOwnerId: "workboard" },
-  { label: "limited operator", scoped: true, pluginOwnerId: "workboard" },
-  { label: "foreign plugin", scoped: false, pluginOwnerId: "another-plugin" },
-  { label: "unowned session", scoped: false, pluginOwnerId: undefined },
+  { label: "system owner", caller: "system", pluginOwnerId: "workboard" },
+  { label: "limited operator", caller: "operator", pluginOwnerId: "workboard" },
+  { label: "foreign plugin", caller: "system", pluginOwnerId: "another-plugin" },
+  { label: "unowned session", caller: "system", pluginOwnerId: undefined },
+  { label: "unscoped caller", caller: "unscoped", pluginOwnerId: "workboard" },
+  { label: "missing plugin identity", caller: "unidentified", pluginOwnerId: "workboard" },
 ])(
   "preserves plugin replacement authority with roles ($label)",
-  async ({ scoped, pluginOwnerId }) => {
+  async ({ caller, pluginOwnerId }) => {
     await withOpenClawTestState({ label: "archived-worker-roles" }, async () => {
       const config: OpenClawConfig = {
         agents: { entries: { main: {} } },
@@ -48,25 +50,33 @@ it.each([
         ...(pluginOwnerId !== undefined ? { pluginOwnerId } : {}),
       };
       await replaceSessionEntry(scope, entry);
-      const operation = withPluginRuntimeGatewayRequestScope(
-        {
-          pluginId: "workboard",
-          context: createContext([], () => config),
-          isWebchatConnect: () => false,
-          ...(scoped
-            ? {
-                client: createOperatorClient({
-                  profileName: "limited-worker",
-                  scopes: ["operator.write"],
-                }),
-              }
-            : {}),
-        },
-        () =>
-          replaceArchivedSubagentSession({ sessionKey: scope.sessionKey, getConfig: () => config }),
-      );
-      if (scoped || pluginOwnerId !== "workboard") {
-        await expect(operation).rejects.toThrow(/role|scope|allowed|access|did not create/i);
+      const replace = () =>
+        replaceArchivedSubagentSession({ sessionKey: scope.sessionKey, getConfig: () => config });
+      const operation =
+        caller === "unscoped"
+          ? replace()
+          : withPluginRuntimeGatewayRequestScope(
+              {
+                ...(caller === "unidentified" ? {} : { pluginId: "workboard" }),
+                context: createContext([], () => config),
+                isWebchatConnect: () => false,
+                ...(caller === "operator"
+                  ? {
+                      client: createOperatorClient({
+                        profileName: "limited-worker",
+                        scopes: ["operator.write"],
+                      }),
+                    }
+                  : {}),
+              },
+              replace,
+            );
+      if (caller !== "system" || pluginOwnerId !== "workboard") {
+        await expect(operation).rejects.toThrow(
+          caller === "unscoped" || caller === "unidentified"
+            ? "requires an active plugin request identity"
+            : /role|scope|allowed|access|did not create/i,
+        );
         await expect(getSessionEntryAsync(scope)).resolves.toMatchObject(entry);
       } else {
         await expect(operation).resolves.toBe(true);

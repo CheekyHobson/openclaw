@@ -45,14 +45,18 @@ export async function replaceArchivedSubagentSession(params: {
     }
   });
   assertCurrent();
-  const entry = await getSessionEntryAsync({ agentId, sessionKey, storePath });
+  const entry = await readSessionEntryReadOnlyInWorker({ agentId, sessionKey, storePath });
   assertCurrent();
   if (entry?.archivedAt === undefined) {
     return false;
   }
+  const scope = getPluginRuntimeGatewayRequestScope();
+  const pluginId = scope?.pluginId?.trim();
+  if (!pluginId) {
+    throw new Error("Archived worker replacement requires an active plugin request identity.");
+  }
   const { runWithInProcessGatewaySessionMutation } =
     await import("../gateway/server-plugin-in-process-dispatch.js");
-  const scope = getPluginRuntimeGatewayRequestScope();
   return await runWithInProcessGatewaySessionMutation(
     "agent",
     { sessionKey, agentId },
@@ -78,7 +82,7 @@ export async function replaceArchivedSubagentSession(params: {
                 action: "reset",
                 entry: currentEntry,
                 key: sessionKey,
-                pluginOwnerId: scope?.pluginId,
+                pluginOwnerId: pluginId,
               });
               if (ownershipError) {
                 throw new Error(ownershipError.message);
@@ -110,7 +114,7 @@ export async function replaceArchivedSubagentSession(params: {
       return replaced;
     },
     {
-      pluginRuntimeOwnerId: scope?.pluginId,
+      pluginRuntimeOwnerId: pluginId,
       ...(!scope?.client ? { operatorRoleActor: { kind: "system" as const } } : {}),
     },
   );
