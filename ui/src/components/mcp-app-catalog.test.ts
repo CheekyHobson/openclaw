@@ -86,9 +86,11 @@ function discoveryContext(request: ReturnType<typeof vi.fn>, scopes = ["operator
 const providers = new WeakMap<HTMLElement, HTMLElement>();
 function provide(element: HTMLElement, context: unknown) {
   // SAFETY: fixtures supply precisely the capabilities exercised by these catalog flows.
-  const provider = createApplicationContextProvider(context as ApplicationContext);
+  const application = context as ApplicationContext;
+  const provider = createApplicationContextProvider(application);
   provider.append(element);
   providers.set(element, provider);
+  return application;
 }
 function appendElement(element: HTMLElement) {
   const provider = providers.get(element);
@@ -389,13 +391,16 @@ describe("app launch catalog", () => {
     for (const element of elements) {
       element.sessionKey = "agent:main:one";
       element.agentId = "main";
-      provide(element, context);
+    }
+    const application = provide(sidebar, context);
+    provide(thread, context);
+    for (const element of elements) {
       appendElement(element);
       await element.updateComplete;
     }
     const resourcesMount = mountSolid(
       () => createComponent(McpAppResources, { sessionKey: "agent:main:one", agentId: "main" }),
-      { wrapper: createSolidApplicationContextProvider(context as ApplicationContext).wrapper },
+      { wrapper: createSolidApplicationContextProvider(application).wrapper },
     );
     onTestFinished(resourcesMount.unmount);
     const resources = resourcesMount.container;
