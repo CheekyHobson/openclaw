@@ -6,7 +6,10 @@ import {
   isSubagentCoordinationInputProvenance,
   type InputProvenance,
 } from "../../sessions/input-provenance.js";
-import { hasUnretiredRpcSource } from "../../sessions/session-controller.rpc-sources.js";
+import {
+  getRpcSourceForGateway,
+  hasUnretiredRpcSource,
+} from "../../sessions/session-controller.rpc-sources.js";
 import { resolveAgentRunExpiresAtMs } from "../chat-abort.js";
 import { logAttachmentFailure } from "../chat-attachments.js";
 import type { AgentRunRequest } from "../server-methods/agent-request-types.js";
@@ -37,7 +40,6 @@ export function createAgentDedupeLifecycle(params: {
   suppressVisibleSessionEffects: boolean;
   inputProvenance?: InputProvenance;
   reconcileDurableInput?: boolean;
-  assertAdmissionCurrent?: () => void;
   ownerConnId?: string;
   ownerDeviceId?: string;
   context: AgentTurnContext;
@@ -223,13 +225,13 @@ export function createAgentDedupeLifecycle(params: {
     if (accepted) {
       return false;
     }
-    try {
-      params.assertAdmissionCurrent?.();
-    } catch {
-      // Authority loss rejects preparation; only a current request may leave
-      // a sticky Stop receipt in place of its unaccepted reservation.
+    const source = getRpcSourceForGateway(params.runId, params.context.resolveGatewayContext);
+    if (source?.adapter.projectSessionTerminalPending) {
+      // Explicit Stop already owns the terminal receipt and its persistence.
       return false;
     }
+    // Cancellation already committed through its requester authority. Record
+    // that fact even though the cancelled source can no longer execute.
     const keys = ownedReservationKeys();
     if (keys.length !== params.agentDedupeKeys.length) {
       return false;

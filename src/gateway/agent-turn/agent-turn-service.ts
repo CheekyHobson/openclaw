@@ -118,7 +118,6 @@ export function createAgentTurnService(
     const dedupeLifecycle = createAgentDedupeLifecycle({
       ...preflight,
       reconcileDurableInput,
-      assertAdmissionCurrent,
       ownerConnId,
       ownerDeviceId,
       context,
