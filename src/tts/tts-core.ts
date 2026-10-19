@@ -18,7 +18,6 @@ export {
   normalizeSeed,
   requireInRange,
   resolveSpeechProviderApiKey,
-  scheduleCleanup,
 } from "./tts-provider-helpers.js";
 
 type SummarizeTextDeps = {

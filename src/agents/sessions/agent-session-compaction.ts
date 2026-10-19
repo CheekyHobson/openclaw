@@ -334,26 +334,24 @@ export abstract class AgentSessionCompaction extends AgentSessionInspection {
       }
       preparation = manualPreflight.preparation;
     } else {
-      preparation = unwrapCoreResult(
-        prepareCompaction(
-          pathEntries,
-          options.settings,
-          options.requestState,
-          requestBudget || pendingEntryIndex >= 0
-            ? {
-                preserveFromEntryId: pathEntries[pendingEntryIndex]?.id,
-                ...(requestBudget && retention
-                  ? {
-                      budget: {
-                        ...retention,
-                        estimateTokens: (message: AgentMessage) =>
-                          estimateCompactionHistoryTokens([message], requestBudget),
-                      },
-                    }
-                  : {}),
-              }
-            : undefined,
-        ),
+      preparation = prepareCompaction(
+        pathEntries,
+        options.settings,
+        options.requestState,
+        requestBudget || pendingEntryIndex >= 0
+          ? {
+              preserveFromEntryId: pathEntries[pendingEntryIndex]?.id,
+              ...(requestBudget && retention
+                ? {
+                    budget: {
+                      ...retention,
+                      estimateTokens: (message: AgentMessage) =>
+                        estimateCompactionHistoryTokens([message], requestBudget),
+                    },
+                  }
+                : {}),
+            }
+          : undefined,
       );
     }
     if (!preparation) {

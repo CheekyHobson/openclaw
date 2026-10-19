@@ -48,8 +48,8 @@ function prepare(
   requestState?: "unresolved",
 ) {
   const result = prepareCompaction(entries, settings, requestState);
-  assert(result.ok && result.value, "expected compactable history");
-  return result.value;
+  assert(result, "expected compactable history");
+  return result;
 }
 
 function resetEntry(index: number, firstKeptEntryId?: string): SessionTreeEntry {
@@ -420,29 +420,28 @@ describe("prepareCompaction when the last entry is a compaction record", () => {
 
     const result = prepareCompaction(entries, settings);
 
-    expect(result.ok).toBe(true);
-    expect(Boolean(result.ok && result.value)).toBe(compactable);
+    expect(Boolean(result)).toBe(compactable);
     if (!compactable) {
       return;
     }
-    assert(result.ok && result.value, "expected compactable trailing boundary");
-    expect(result.value.messagesToSummarize.length).toBeGreaterThan(0);
-    expect(result.value.previousSummary).toBe("later summary");
-    expect(result.value.firstKeptEntryId).not.toBe("entry-2");
+    assert(result, "expected compactable trailing boundary");
+    expect(result.messagesToSummarize.length).toBeGreaterThan(0);
+    expect(result.previousSummary).toBe("later summary");
+    expect(result.firstKeptEntryId).not.toBe("entry-2");
 
     const nextResult = prepareCompaction(
       [
         ...entries,
-        compactionEntry(7, "final summary", result.value.firstKeptEntryId, {
+        compactionEntry(7, "final summary", result.firstKeptEntryId, {
           id: "compaction-3",
           parentId: "compaction-2",
-          tokensBefore: result.value.tokensBefore,
+          tokensBefore: result.tokensBefore,
         }),
       ],
       settings,
     );
 
-    expect(nextResult).toEqual({ ok: true, value: undefined });
+    expect(nextResult).toBeUndefined();
   });
 
   it("ignores missing fields in persisted compaction details", () => {

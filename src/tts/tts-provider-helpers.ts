@@ -1,10 +1,7 @@
-import { rmSync } from "node:fs";
 import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
-
-const TEMP_FILE_CLEANUP_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 
 /** Resolve the first non-blank API key in provider-defined precedence order. */
 export function resolveSpeechProviderApiKey(
@@ -56,18 +53,4 @@ export function normalizeSeed(seed?: number): number | undefined {
     throw new Error("seed must be between 0 and 4294967295");
   }
   return next;
-}
-
-export function scheduleCleanup(
-  tempDir: string,
-  delayMs: number = TEMP_FILE_CLEANUP_DELAY_MS,
-): void {
-  const timer = setTimeout(() => {
-    try {
-      rmSync(tempDir, { recursive: true, force: true });
-    } catch {
-      // ignore cleanup errors
-    }
-  }, delayMs);
-  timer.unref();
 }

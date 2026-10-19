@@ -24,7 +24,6 @@ export type {
 } from "../tts/provider-types.js";
 
 export {
-  scheduleCleanup,
   summarizeText,
   normalizeApplyTextNormalization,
   normalizeLanguageCode,

@@ -20,7 +20,6 @@ type RegisteredDiagnosticTracePropagationBridge = DiagnosticTracePropagationBrid
 
 type DiagnosticTracePropagationState = {
   marker: symbol;
-  bridges: Set<RegisteredDiagnosticTracePropagationBridge>;
   activeBridge: RegisteredDiagnosticTracePropagationBridge | undefined;
 };
 
@@ -32,7 +31,6 @@ const tracePropagationState = resolveGlobalSingleton<DiagnosticTracePropagationS
   DIAGNOSTIC_TRACE_PROPAGATION_STATE_KEY,
   () => ({
     marker: DIAGNOSTIC_TRACE_PROPAGATION_STATE_KEY,
-    bridges: new Set<RegisteredDiagnosticTracePropagationBridge>(),
     activeBridge: undefined,
   }),
 );
@@ -49,17 +47,11 @@ export function registerDiagnosticTracePropagationBridge(
   // The global registry crosses preloaded and plugin-owned SDK copies. Erase
   // event types only inside that registry; callers keep the exact typed seam.
   const registered = bridge as unknown as RegisteredDiagnosticTracePropagationBridge;
-  if (!state.bridges.has(registered)) {
-    state.bridges.add(registered);
-    state.activeBridge = registered;
-  }
+  // Exporter replacement stops the previous service before registering its successor.
+  state.activeBridge = registered;
   return () => {
-    if (!state.bridges.delete(registered) || state.activeBridge !== registered) {
-      return;
-    }
-    state.activeBridge = undefined;
-    for (const remaining of state.bridges) {
-      state.activeBridge = remaining;
+    if (state.activeBridge === registered) {
+      state.activeBridge = undefined;
     }
   };
 }
@@ -121,6 +113,5 @@ export function formatPropagatedDiagnosticTraceparent(
 }
 
 export function resetDiagnosticTracePropagationForTest(): void {
-  tracePropagationState.bridges.clear();
   tracePropagationState.activeBridge = undefined;
 }
