@@ -7,6 +7,7 @@ import type {
   NormalizedChromeMcpProfileOptions,
 } from "./chrome-mcp-contracts.js";
 import { closeChromeMcpSession } from "./chrome-mcp-session.js";
+import { listChromeMcpTabs } from "./chrome-mcp-tabs.js";
 import type { ChromeMcpSnapshotNode } from "./chrome-mcp.snapshot.js";
 
 const { resetChromeMcpProcessMocks } = await vi.hoisted(
@@ -99,6 +100,22 @@ export function createPageSession(params: {
   return createSessionStub(callTool, params.pid ?? 141);
 }
 
+export async function setupSnapshotSession(
+  onTool: Parameters<typeof createPageSession>[0]["onTool"],
+  pageIds = [1],
+) {
+  const session = createPageSession({
+    pages: pageIds.map((id) => ({ id, url: `https://page-${id}.example` })),
+    onTool,
+  });
+  setChromeMcpSessionFactoryForTest(() => session);
+  const targets = (await listChromeMcpTabs("chrome-live")).map((tab) => ({
+    profileName: "chrome-live",
+    targetId: tab.targetId,
+  }));
+  return { session, targets };
+}
+
 export function installChromeMcpSessionTestHooks() {
   beforeEach(async () => {
     await resetChromeMcpSessionsForTest();
@@ -163,6 +180,10 @@ export function createFakeSession(): ChromeMcpSession {
       nextSnapshotRefId: 1,
     },
   };
+}
+
+export function snapshotResult(snapshot: ChromeMcpSnapshotNode) {
+  return { structuredContent: { snapshot } };
 }
 
 export function snapshotWithControls(...children: ChromeMcpSnapshotNode[]): ChromeMcpSnapshotNode {

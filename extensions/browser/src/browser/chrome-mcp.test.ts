@@ -47,6 +47,8 @@ import {
   installChromeMcpSessionTestHooks,
   pagesResult,
   setChromeMcpSessionFactoryForTest,
+  setupSnapshotSession,
+  snapshotResult,
   snapshotWithControls,
   textResult,
   waitForChromeMcpState,
@@ -1308,9 +1310,5 @@ describe("chrome MCP page parsing", () => {
     expect(closeMocks[0]).toHaveBeenCalledTimes(1);
   });
 });
-
-function snapshotResult(snapshot: ChromeMcpSnapshotNode) {
-  return { structuredContent: { snapshot } };
-}
 
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
