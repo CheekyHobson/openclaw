@@ -1,13 +1,10 @@
 import type { UpdateRunRecord } from "../../../src/infra/update-run-record.js";
 import type { UpdateAvailable, UpdateScheduleState } from "../api/types.ts";
-import type { DevicePairSetupAccess, DevicePairSetupLifecycle } from "../lib/device-pair-setup.ts";
-import type { ExecApprovalDecision, ExecApprovalRequest } from "./exec-approval.ts";
+import type { DevicePairSetupLifecycle } from "../lib/device-pair-setup.ts";
+import type { ExecApprovalRequest } from "./exec-approval.ts";
+import type { createApplicationOverlays } from "./overlays.ts";
 import type { SubmittedUpdateReport } from "./update-failure-report.ts";
-import type {
-  ApplicationStatusBanner,
-  RecordedUpdateAttempt,
-  createUpdateStatusRefresher,
-} from "./update-overlay-helpers.ts";
+import type { ApplicationStatusBanner, RecordedUpdateAttempt } from "./update-overlay-helpers.ts";
 
 export type UpdateFailureReportNotice = {
   attemptId: string;
@@ -44,24 +41,4 @@ export type ApplicationOverlaySnapshot = ApplicationUpdateOverlaySnapshot & {
   devicePairPendingCount: number;
 };
 
-export type ApplicationOverlays = {
-  readonly snapshot: ApplicationOverlaySnapshot;
-  subscribe: (listener: (snapshot: ApplicationOverlaySnapshot) => void) => () => void;
-  refreshUpdateStatus: ReturnType<typeof createUpdateStatusRefresher>;
-  acknowledgeUpdateRun: () => void;
-  captureUpdateTarget: () => () => boolean;
-  runUpdate: () => Promise<void>;
-  holdUpdate: () => Promise<boolean>;
-  diagnoseUpdateFailure: (attemptId: string) => void;
-  reportUpdateFailure: (attemptId: string) => Promise<void>;
-  decideApproval: (
-    decision: ExecApprovalDecision,
-    approvalId?: string,
-    projectedApproval?: ExecApprovalRequest,
-  ) => Promise<void>;
-  openDevicePairSetup: () => Promise<boolean>;
-  refreshDevicePairSetup: () => Promise<void>;
-  setDevicePairSetupAccess: (access: DevicePairSetupAccess) => Promise<void>;
-  closeDevicePairSetup: () => void;
-  dispose: () => void;
-};
+export type ApplicationOverlays = ReturnType<typeof createApplicationOverlays>;

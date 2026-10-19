@@ -2,6 +2,8 @@ import type {
   SessionOwner,
   SessionsAssignOwnerParams,
   SessionsAssignOwnerResult,
+  SessionsPatchManyParams,
+  SessionsPatchManyResult,
 } from "../../../../packages/gateway-protocol/src/index.js";
 import type { GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
 import { formatUiError } from "../format-error.ts";
@@ -15,7 +17,6 @@ import type { SessionPatch, SessionPatchOptions, SessionPatchResult } from "./pa
 import { mapSessionResultRows } from "./reconcile.ts";
 import { createSessionArchiveState, projectSessionArchiveFields } from "./session-archive-state.ts";
 import type {
-  SessionCapability,
   SessionConnectionScope,
   SessionCreateReconciliation,
   SessionRefreshOutcome,
@@ -452,7 +453,10 @@ export function createSessionMutations(host: SessionMutationsHost) {
     }
   };
 
-  const patchMany: SessionCapability["patchMany"] = async (targets, patchParams) => {
+  const patchMany = async (
+    targets: SessionsPatchManyParams["targets"],
+    patchParams: SessionsPatchManyParams["patch"],
+  ): Promise<SessionsPatchManyResult | null> => {
     const scope = host.connection.capture();
     if (!scope) {
       return null;

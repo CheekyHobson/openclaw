@@ -14,9 +14,12 @@ import {
   type SessionReconcileOptions,
 } from "./reconcile.ts";
 import type {
-  SessionCapability,
   SessionConnectionOwner,
   SessionGateway,
+  SessionListScope,
+  SessionRowEventListener,
+  SessionRowListener,
+  SessionRowObservation,
   SessionRowTarget,
   SessionState,
 } from "./session-capability.ts";
@@ -205,9 +208,9 @@ export function createSessionReconciliation(host: Host) {
   const reconcile = (
     row: GatewaySessionRow | undefined,
     defaults?: SessionsListResult["defaults"],
-    options?: Parameters<SessionCapability["reconcile"]>[2],
+    options?: SessionReconcileOptions & { sourceListScope?: SessionListScope },
     observation?: ReturnType<Host["roster"]["captureReconciliation"]>,
-  ): ReturnType<SessionCapability["reconcile"]> => {
+  ): boolean | "defaults-only" => {
     const state = host.readState();
     const historyAgentId =
       row?.agentId ??
@@ -290,7 +293,11 @@ export function createSessionReconciliation(host: Host) {
     return true;
   };
 
-  const observeRow: SessionCapability["observeRow"] = (target, listener, options) => {
+  const observeRow = (
+    target: SessionRowTarget,
+    listener: SessionRowListener,
+    options?: { onInvalidate?: (reason?: string) => void; onEvent?: SessionRowEventListener },
+  ): SessionRowObservation => {
     const { roster, deletions } = host;
     if (!target.key.trim() || !target.agentId.trim()) {
       throw new Error("A session row observation requires a session key and explicit agent.");
@@ -615,9 +622,14 @@ export function createSessionReconciliation(host: Host) {
     reconcile,
     reconcileChangedEvent,
     observeRow,
-    captureReconcile(this: void): SessionCapability["reconcile"] {
+    /** Captures request ordering before a supplemental row read begins. */
+    captureReconcile(this: void) {
       const observation = host.roster.captureReconciliation();
-      return (row, defaults, options) => reconcile(row, defaults, options, observation);
+      return (
+        row: GatewaySessionRow | undefined,
+        defaults?: SessionsListResult["defaults"],
+        options?: SessionReconcileOptions & { sourceListScope?: SessionListScope },
+      ) => reconcile(row, defaults, options, observation);
     },
   };
 }

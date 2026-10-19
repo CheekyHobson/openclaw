@@ -10,10 +10,10 @@ import {
 } from "./reconcile.ts";
 import type {
   GitHubPublicationBinding,
-  SessionCapability,
   SessionConnectionOwner,
   SessionGateway,
 } from "./session-capability.ts";
+import type { createSessionDeletions } from "./session-deletions.ts";
 import {
   isUiGlobalSessionKey,
   resolveUiConversationIdentity,
@@ -25,7 +25,9 @@ const MAX_RETAINED_PUBLICATIONS = 32;
 type Host = {
   connection: SessionConnectionOwner;
   snapshot: () => SessionGateway["snapshot"];
-  deletionState: (row: GatewaySessionRow) => ReturnType<SessionCapability["deletionState"]>;
+  deletionState: (
+    row: GatewaySessionRow,
+  ) => ReturnType<ReturnType<typeof createSessionDeletions>["deletionState"]>;
 };
 
 function invocationRow(row: GatewaySessionRow): GatewaySessionRow {

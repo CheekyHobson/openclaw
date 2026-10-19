@@ -1,10 +1,6 @@
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { mapSessionResultRows } from "./reconcile.ts";
-import type {
-  SessionCapability,
-  SessionConnectionOwner,
-  SessionState,
-} from "./session-capability.ts";
+import type { SessionConnectionOwner, SessionState } from "./session-capability.ts";
 import { areUiSessionKeysEquivalent } from "./session-key.ts";
 import {
   pendingRowIdentity,
@@ -20,10 +16,13 @@ export type SessionRowLocalPatchHost = Pick<PendingRowHost, "snapshot"> &
     publish: (state: SessionState, errorSource?: "session-observer" | "operation") => void;
   };
 
-export function createSessionRowLocalPatch(
-  host: SessionRowLocalPatchHost,
-): SessionCapability["patchRowLocal"] {
-  return (key, patch, target) => {
+export function createSessionRowLocalPatch(host: SessionRowLocalPatchHost) {
+  // Local previews update the primary snapshot; explicit targets also update held incarnations.
+  return (
+    key: string,
+    patch: Partial<GatewaySessionRow>,
+    target?: { agentId: string; sessionId: string },
+  ): void => {
     const scope = host.connection.capture();
     const normalizedKey = key.trim();
     if (
