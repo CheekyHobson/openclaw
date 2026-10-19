@@ -1,4 +1,5 @@
 import {
+  AgentHarnessPreflightError,
   embeddedAgentLog,
   hasBeforeToolCallPolicy,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
@@ -149,6 +150,14 @@ export async function startCodexAttemptRuntime(resources: CodexAttemptResources)
       spawnedBy: params.spawnedBy,
     });
     state.client = startupResult.client;
+    if (
+      appServer.start.transport === "websocket" &&
+      !connection.usesSupervisionConnection &&
+      !params.expectedSessionRuntimeOwnership &&
+      !startupResult.sandboxEnvironment
+    ) {
+      state.acquireRecoveryClient = startupResult.acquireRecoveryClient;
+    }
     state.thread = startupResult.thread;
     state.runtimeArtifact = startupResult.runtimeArtifact;
     state.turnRouter = startupResult.turnRouter;
@@ -161,8 +170,8 @@ export async function startCodexAttemptRuntime(resources: CodexAttemptResources)
     // preflight succeeds; startup retries may have replaced the initial client.
     await attemptTools.captureCronCreatorToolAllowlist();
     pluginAppServer = startupResult.pluginAppServer;
-    toolBridge.setRemoteWorkspaceFileReader?.(
-      createCodexRemoteWorkspaceFileReader(startupResult.client, connection.authority),
+    toolBridge.setRemoteWorkspaceFileReader?.((options) =>
+      createCodexRemoteWorkspaceFileReader(state.client, connection.authority)(options),
     );
     if (
       usesSupervisionConnection &&
@@ -231,7 +240,8 @@ export async function startCodexAttemptRuntime(resources: CodexAttemptResources)
     // Monitor setup still belongs to startup's resource cleanup boundary.
     await resources.registerNativeSubagentMonitor(state.thread.threadId);
   } catch (error) {
-    throw error instanceof CodexThreadPolicyHandoffError
+    throw error instanceof CodexThreadPolicyHandoffError ||
+      error instanceof AgentHarnessPreflightError
       ? error
       : (state.executionDisconnectError ?? error);
   }

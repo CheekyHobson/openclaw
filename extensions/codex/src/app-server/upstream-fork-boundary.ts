@@ -170,7 +170,7 @@ function resolveCodexUpstreamForkBoundaryFromTurns(params: {
 }
 
 export async function listCodexUpstreamTurns(
-  control: CodexSessionCatalogControl,
+  control: Pick<CodexSessionCatalogControl, "listTurnPage">,
   threadId: string,
 ): Promise<CodexTurn[]> {
   const turns: CodexTurn[] = [];

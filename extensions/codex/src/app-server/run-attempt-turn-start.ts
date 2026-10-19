@@ -218,6 +218,29 @@ export async function startCodexAttemptTurn(
           }),
         };
       }
+      if (resourceState.remoteRecoveryFailed) {
+        // The transport can lose the acknowledgement after native execution began.
+        // Surface an incomplete task and prohibit both prompt replay and model fallback.
+        return {
+          result: {
+            ...buildCodexTurnStartFailureResult({
+              params,
+              message,
+              promptError: turnStartError,
+              messagesSnapshot,
+              systemPromptReport,
+            }),
+            replayMetadata: { hadPotentialSideEffects: true, replaySafe: false },
+            codexAppServerFailure: {
+              kind: "client_closed_before_turn_completed",
+              transport: appServer.start.transport,
+              threadId: resourceState.thread.threadId,
+              replaySafe: false,
+              replayBlockedReason: "potential_side_effect",
+            },
+          },
+        };
+      }
       if (isCodexContextRestartSelectionChangedError(turnStartError)) {
         return {
           result: {

@@ -14,16 +14,74 @@ import {
   type CodexAppServerClient,
 } from "./client.js";
 import { codexPrewriteRejectionCause } from "./rpc-error.js";
+import type { CodexBindingAuthority } from "./session-binding.js";
 import {
   isCodexAppServerStartSelectionChangedError,
   retireSharedCodexAppServerClientIfCurrent,
 } from "./shared-client.js";
-import { getCodexAppServerTurnRouter } from "./turn-router.js";
+import type { CodexAppServerThreadLifecycleBinding } from "./thread-lifecycle.js";
+import { getCodexAppServerTurnRouter, type CodexThreadRouteReservation } from "./turn-router.js";
 
 export const CODEX_APP_SERVER_INTERRUPT_TIMEOUT_MS = 5_000;
 export const CODEX_APP_SERVER_UNSUBSCRIBE_TIMEOUT_MS = 5_000;
 const CODEX_NO_ACTIVE_TURN_ERROR_CODE = -32_600;
 const CODEX_NO_ACTIVE_TURN_ERROR_MESSAGE = "no active turn to interrupt";
+
+/** Settle one subscription without allowing failed recovery to retire sibling work. */
+export async function releaseCodexAttemptThreadSubscription(params: {
+  client: CodexAppServerClient;
+  thread: CodexAppServerThreadLifecycleBinding;
+  recoveryRoute?: CodexThreadRouteReservation;
+  readCurrentRoute: () => CodexThreadRouteReservation | undefined;
+  cleanupAuthority: CodexBindingAuthority;
+  nativeSettlementExpired: boolean;
+  assertCurrent?: () => void;
+  withCurrent: (write: () => void) => Promise<void>;
+}): Promise<boolean> {
+  const { client, thread, recoveryRoute, cleanupAuthority } = params;
+  if (recoveryRoute && recoveryRoute.threadId === thread.threadId) {
+    // This reservation owns only its exact subscription. An unavailable backend
+    // must not retire a shared replacement client or another conversation.
+    thread.liveThreadOwnership?.forget();
+    return await unsubscribeCodexThreadBestEffort(client, {
+      threadId: thread.threadId,
+      timeoutMs: CODEX_APP_SERVER_UNSUBSCRIBE_TIMEOUT_MS,
+      assertCurrent: () => {
+        cleanupAuthority.assertCurrent();
+        if (params.readCurrentRoute() !== recoveryRoute) {
+          throw new Error("Codex recovery subscription ownership changed");
+        }
+      },
+      withCurrent: cleanupAuthority.withCurrent,
+    });
+  }
+  if (thread.liveThreadOwnership) {
+    try {
+      // This branded handle fences the exact physical client/thread/claim.
+      // Releasing it is required cleanup, not a new foreground-row operation.
+      await thread.liveThreadOwnership.release(thread.threadId);
+      return true;
+    } catch (error) {
+      await closeCodexStartupClientBestEffort(client);
+      throw error;
+    }
+  }
+  if (params.nativeSettlementExpired) {
+    // Untracked cleanup has no exact claim to prove release authority.
+    await closeCodexStartupClientBestEffort(client);
+    return false;
+  }
+  const released = await unsubscribeCodexThreadBestEffort(client, {
+    threadId: thread.threadId,
+    timeoutMs: CODEX_APP_SERVER_UNSUBSCRIBE_TIMEOUT_MS,
+    assertCurrent: params.assertCurrent,
+    withCurrent: params.withCurrent,
+  });
+  if (!released) {
+    await closeCodexStartupClientBestEffort(client);
+  }
+  return released;
+}
 
 /** Codex also reports this before an accepted turn publishes its start event. */
 export function isCodexNoActiveTurnInterruptError(error: unknown): error is CodexAppServerRpcError {

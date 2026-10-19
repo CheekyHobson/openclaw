@@ -158,6 +158,9 @@ export type CodexResumeThreadContext = CodexThreadRequestContext & {
 
 export type CodexStartThreadContext = CodexThreadRequestContext & {
   prebuiltPluginThreadConfig?: CodexPluginThreadConfig;
+  prebuiltFinalConfigPatch?: CodexThreadFinalConfigPatchResult;
+  /** Full-history replacement of an owned terminal failure; never a fresh empty start. */
+  settledFailureForkSource?: CodexAppServerThreadBinding;
   preserveExistingBinding: boolean;
   rotatedContextEngineBinding: boolean;
   replacementPredecessor?: CodexAppServerThreadBinding;

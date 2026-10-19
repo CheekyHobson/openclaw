@@ -18,7 +18,21 @@ export async function beginCodexAttemptSettlement(
   const { connection } = resources.prompt.context.runtime;
   const { params, runAbortController, appServer } = connection;
   const { state, deadlines, settlementExpired } = turnRuntime;
-  const { drainNotificationQueue } = notifications;
+  const drainNotificationQueue = async () => {
+    try {
+      await notifications.drainNotificationQueue();
+    } catch (error) {
+      if (!resourceState.remoteRecoveryFailed || !state.clientClosedAbort) {
+        throw error;
+      }
+      // The replacement admission barrier deliberately rejected this route.
+      // Still settle the original projector so its observed effects and explicit
+      // non-replayable transport failure survive into the host attempt result.
+      embeddedAgentLog.debug("discarded failed Codex recovery notification barrier", {
+        error: formatErrorMessage(error),
+      });
+    }
+  };
   const { activeProjector, activeTurnId } = activeTurn;
   const drainGraceElapsed = createDeferred<void>();
   let settlementPhase: "active" | "expired" | "closed" = "active";

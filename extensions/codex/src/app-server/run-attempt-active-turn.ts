@@ -113,10 +113,9 @@ export function activateCodexAttemptTurn(
     : dynamicToolParams;
   const hostPrepareReplyMedia = params.hostCapabilities.prepareReplyMedia;
   const remoteWorkspaceRoot = connection.appServer.remoteWorkspaceRoot;
-  const readRemoteWorkspaceFile = createCodexRemoteWorkspaceFileReader(
-    resourceState.client,
-    connection.authority,
-  );
+  const readRemoteWorkspaceFile: ReturnType<typeof createCodexRemoteWorkspaceFileReader> = (
+    options,
+  ) => createCodexRemoteWorkspaceFileReader(resourceState.client, connection.authority)(options);
   const prepareReplyMedia =
     hostPrepareReplyMedia && remoteWorkspaceRoot
       ? async (
@@ -146,7 +145,9 @@ export function activateCodexAttemptTurn(
   const progressCardTool = toolBridge.availableTools.find((tool) => tool.name === "progress_card");
   let nativePlanUpdateOrdinal = 0;
   const prepareNativeMcpAppResultDetails = createCodexNativeMcpAppResultDetailsPreparer({
-    client: resourceState.client,
+    get client() {
+      return resourceState.client;
+    },
     threadId: resourceState.thread.threadId,
     attempt: dynamicToolParams,
   });
@@ -337,7 +338,9 @@ export function activateCodexAttemptTurn(
         : undefined,
   };
   const activeSteeringQueue = createCodexSteeringQueue({
-    client: resourceState.client,
+    get client() {
+      return resourceState.client;
+    },
     threadId: resourceState.thread.threadId,
     turnId: activeTurnId,
     requestTimeoutMs: connection.appServer.requestTimeoutMs,
@@ -605,7 +608,9 @@ export function activateCodexAttemptTurn(
         paramsForRun: params,
         prepareResourceContext: (request) =>
           prepareCodexNativeMcpFormResourceContext({
-            client: resourceState.client,
+            get client() {
+              return resourceState.client;
+            },
             threadId: resourceState.thread.threadId,
             attempt: params,
             request,

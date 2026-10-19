@@ -220,6 +220,15 @@ export async function finalizeCodexAttempt(
       });
     }
     const projectTerminalOutcome = () => {
+      if (resourceState.remoteRecoveryFailed) {
+        // The accepted native turn may have performed work whose notifications
+        // were lost. Failed rejoining cannot establish that replay is safe.
+        result.replayMetadata = {
+          ...result.replayMetadata,
+          hadPotentialSideEffects: true,
+          replaySafe: false,
+        };
+      }
       const effectiveTimedOut = state.timeout !== undefined;
       const clientClosedPromptErrorForFinal = state.clientClosedPromptError;
       const finalPromptError = currentPromptError(enrichedPromptError);

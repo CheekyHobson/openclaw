@@ -45,6 +45,7 @@ class CodexAttemptState {
   clientClosedPromptError?: string;
   clientClosedDiagnostic?: string;
   clientClosedAbort = false;
+  connectionRecovery?: Promise<void>;
   shouldDelayNativeHookRelayUnregister = false;
   lifecycleStarted = false;
   lifecycleTerminalEmitted = false;
@@ -81,6 +82,12 @@ export function createCodexAttemptTurnState(resources: CodexAttemptResources) {
     Pick<CodexDynamicToolCallParams, "threadId" | "turnId" | "callId">,
     CodexDynamicToolRuntimeResponse
   >((call) => [call.threadId, call.turnId, call.callId]);
+  const dynamicToolRequestAbortControllers = new Map<string, AbortController>();
+  const pendingDynamicToolAbortControllers = new Set<AbortController>();
+  const dynamicToolRequestIdentities = new Map<
+    string | number,
+    { threadId: string; turnId: string; controller: AbortController }
+  >();
   const activeTurnItemIds = new Set<string>();
   const turnIdRef: { current?: string } = {};
   const userInputBridgeRef: { current?: ReturnType<typeof createCodexUserInputBridge> } = {};
@@ -226,6 +233,9 @@ export function createCodexAttemptTurnState(resources: CodexAttemptResources) {
     settlementExpired: settlementExpired.promise,
     pendingOpenClawDynamicToolCompletionIds,
     openClawDynamicToolExecutions,
+    dynamicToolRequestAbortControllers,
+    pendingDynamicToolAbortControllers,
+    dynamicToolRequestIdentities,
     activeTurnItemIds,
     turnIdRef,
     userInputBridgeRef,

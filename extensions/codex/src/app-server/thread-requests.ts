@@ -202,7 +202,7 @@ export function buildCodexThreadConfiguration(
 export function buildThreadStartParams(
   params: AgentHarnessSessionRuntimeParamsV1,
   options: CodexThreadConfigurationOptions & { cwd: string; dynamicTools: CodexDynamicToolSpec[] },
-): CodexThreadStartParams {
+): CodexThreadStartParams & { developerInstructions: string } {
   const resolvedModelProvider = resolveCodexAppServerModelProvider({
     ...params,
     homeScope: options.appServer.start.homeScope,

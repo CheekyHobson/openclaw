@@ -116,7 +116,49 @@ export function createCodexAttemptServerRequestController(
     requestSignal: AbortSignal = new AbortController().signal,
     setExecutionTimeoutMs?: (timeoutMs: number) => void,
   ) => {
-    const signal = AbortSignal.any([runAbortController.signal, requestSignal]);
+    const requestClient = resourceState.client;
+    const toolCall =
+      request.method === "item/tool/call"
+        ? readCodexDynamicToolCallParams(request.params)
+        : undefined;
+    const retainedTool =
+      resourceState.acquireRecoveryClient &&
+      toolCall &&
+      toolCall.threadId === resourceState.thread.threadId &&
+      toolCall.turnId === turnIdRef.current;
+    let detachRequestAbort: (() => void) | undefined;
+    let retainedExecutionController: AbortController | undefined;
+    let executionSignal = requestSignal;
+    if (retainedTool && toolCall) {
+      const key = JSON.stringify([toolCall.threadId, toolCall.turnId, toolCall.callId]);
+      let controller = turnRuntime.dynamicToolRequestAbortControllers.get(key);
+      if (!controller) {
+        controller = new AbortController();
+        turnRuntime.dynamicToolRequestAbortControllers.set(key, controller);
+      }
+      const executionController = controller;
+      retainedExecutionController = executionController;
+      turnRuntime.dynamicToolRequestIdentities.set(request.id, {
+        threadId: toolCall.threadId,
+        turnId: toolCall.turnId,
+        controller: executionController,
+      });
+      const abortRequest = () => {
+        const closed = requestClient.getCloseError();
+        // A physical reply channel may disappear while the same admitted tool is
+        // still running. A replay shares its result AND its cancellation owner.
+        if (!closed || requestSignal.reason !== closed) {
+          executionController.abort(requestSignal.reason);
+        }
+      };
+      requestSignal.addEventListener("abort", abortRequest, { once: true });
+      if (requestSignal.aborted) {
+        abortRequest();
+      }
+      detachRequestAbort = () => requestSignal.removeEventListener("abort", abortRequest);
+      executionSignal = executionController.signal;
+    }
+    const signal = AbortSignal.any([runAbortController.signal, executionSignal]);
     const turnId = turnIdRef.current;
     const projector = projectorRef.current;
     let requestCountsAsTurnActivity = false;
@@ -182,6 +224,14 @@ export function createCodexAttemptServerRequestController(
       if (!call || call.threadId !== resourceState.thread.threadId || call.turnId !== turnId) {
         return undefined;
       }
+      // A replay owns a new reply channel, but the original execution keeps its
+      // existing deadline. Preserve this tool's wire budget on both deliveries.
+      const dynamicToolTimeoutMs = resolveDynamicToolCallTimeoutMs({
+        call,
+        config: params.config,
+        toolBridge,
+      });
+      setExecutionTimeoutMs?.(dynamicToolTimeoutMs);
       const replayedExecution = openClawDynamicToolExecutions.get(call);
       if (replayedExecution) {
         markCurrentTurnRequestProgress();
@@ -238,12 +288,6 @@ export function createCodexAttemptServerRequestController(
           },
         });
       }
-      const dynamicToolTimeoutMs = resolveDynamicToolCallTimeoutMs({
-        call,
-        config: params.config,
-        toolBridge,
-      });
-      setExecutionTimeoutMs?.(dynamicToolTimeoutMs);
       const toolStartedAt = Date.now();
       const diagnosticContext = {
         call,
@@ -269,42 +313,58 @@ export function createCodexAttemptServerRequestController(
       );
       try {
         const { execution } = openClawDynamicToolExecutions.claim(call, async () => {
-          // Publish the execution claim before persistence yields, so a replay
-          // cannot become another owner of this call's progress or result.
-          await projector?.transcriptCheckpoint.flush();
-          emitDynamicToolStartedDiagnostic(diagnosticContext);
-          const response = await handleDynamicToolCallWithTimeout({
-            call,
-            toolBridge,
-            signal,
-            timeoutMs: dynamicToolTimeoutMs,
-            toolMeta,
-            toolCallOrdinal,
-            onAgentToolResult: params.onAgentToolResult,
-            observeToolTerminal: params.observeToolTerminal,
-            onFallbackSelected: () => {
-              if (toolCallOrdinal !== undefined) {
-                suppressedDynamicToolOutcomeOrdinals.add(toolCallOrdinal);
+          if (retainedExecutionController) {
+            turnRuntime.pendingDynamicToolAbortControllers.add(retainedExecutionController);
+          }
+          try {
+            // Publish the execution claim before persistence yields, so a replay
+            // cannot become another owner of this call's progress or result.
+            await projector?.transcriptCheckpoint.flush();
+            emitDynamicToolStartedDiagnostic(diagnosticContext);
+            const response = await handleDynamicToolCallWithTimeout({
+              call,
+              toolBridge,
+              signal,
+              timeoutMs: dynamicToolTimeoutMs,
+              toolMeta,
+              toolCallOrdinal,
+              onAgentToolResult: params.onAgentToolResult,
+              observeToolTerminal: params.observeToolTerminal,
+              onFallbackSelected: () => {
+                if (toolCallOrdinal !== undefined) {
+                  suppressedDynamicToolOutcomeOrdinals.add(toolCallOrdinal);
+                }
+              },
+              onTimeout: () => {
+                trajectoryRecorder?.recordEvent("tool.timeout", {
+                  threadId: call.threadId,
+                  turnId: call.turnId,
+                  toolCallId: call.callId,
+                  name: call.tool,
+                  timeoutMs: dynamicToolTimeoutMs,
+                });
+              },
+            });
+            recordCodexDynamicToolResult(
+              projector,
+              call,
+              response,
+              toCodexDynamicToolProtocolResponse(response),
+            );
+            await projector?.transcriptCheckpoint.flush();
+            return response;
+          } finally {
+            if (retainedExecutionController) {
+              turnRuntime.pendingDynamicToolAbortControllers.delete(retainedExecutionController);
+              const key = JSON.stringify([call.threadId, call.turnId, call.callId]);
+              if (
+                turnRuntime.dynamicToolRequestAbortControllers.get(key) ===
+                retainedExecutionController
+              ) {
+                turnRuntime.dynamicToolRequestAbortControllers.delete(key);
               }
-            },
-            onTimeout: () => {
-              trajectoryRecorder?.recordEvent("tool.timeout", {
-                threadId: call.threadId,
-                turnId: call.turnId,
-                toolCallId: call.callId,
-                name: call.tool,
-                timeoutMs: dynamicToolTimeoutMs,
-              });
-            },
-          });
-          recordCodexDynamicToolResult(
-            projector,
-            call,
-            response,
-            toCodexDynamicToolProtocolResponse(response),
-          );
-          await projector?.transcriptCheckpoint.flush();
-          return response;
+            }
+          }
         });
         const response = await execution;
         const protocolResponse = toCodexDynamicToolProtocolResponse(response);
@@ -402,6 +462,7 @@ export function createCodexAttemptServerRequestController(
         unsubscribeToolDiagnosticObserver();
       }
     } finally {
+      detachRequestAbort?.();
       if (requestCountsAsTurnActivity) {
         state.activeAppServerTurnRequests -= 1;
         noteProgress(`request:${request.method}:response`);

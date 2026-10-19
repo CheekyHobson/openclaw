@@ -6,11 +6,7 @@ import {
 import { createNativeSessionBindingAuthority } from "openclaw/plugin-sdk/agent-harness-session-runtime";
 import { isIncognitoSessionKey } from "openclaw/plugin-sdk/session-key-runtime";
 import { getSessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
-import {
-  CODEX_APP_SERVER_UNSUBSCRIBE_TIMEOUT_MS,
-  closeCodexStartupClientBestEffort,
-  unsubscribeCodexThreadBestEffort,
-} from "./attempt-client-cleanup.js";
+import { releaseCodexAttemptThreadSubscription } from "./attempt-client-cleanup.js";
 import { resolveCodexStartupTimeoutMs } from "./attempt-timeouts.js";
 import { protectCodexAppServerLiveThread } from "./client-runtime.js";
 import { resolveCodexAppServerClientInstanceId, type CodexAppServerClient } from "./client.js";
@@ -34,6 +30,7 @@ import type { CodexNativeSubagentSubmissionStore } from "./native-subagent-submi
 import type { CodexSandboxPolicy, CodexTurnEnvironmentParams } from "./protocol.js";
 import { reportCodexBackgroundCleanupFailure } from "./run-attempt-lifecycle.js";
 import type { CodexAttemptPrompt } from "./run-attempt-prompt.js";
+import type { CodexRecoveryClientLease } from "./run-attempt-recovery.js";
 import {
   releaseCodexSandboxExecServerEnvironment,
   type CodexSandboxExecEnvironment,
@@ -125,6 +122,7 @@ export function prepareCodexAttemptResources(prompt: CodexAttemptPrompt) {
     thread: undefined as unknown as CodexAppServerThreadLifecycleBinding,
     runtimeArtifact: undefined as AgentHarnessRuntimeArtifactBinding | undefined,
     turnRouter: undefined as unknown as CodexAppServerTurnRouter,
+    // SAFETY: This slot starts unset and receives only an admitted route reservation.
     turnRoute: undefined as CodexThreadRouteReservation | undefined,
     routeActivated: false,
     detachRouteAbort: (() => undefined) as () => void,
@@ -136,6 +134,10 @@ export function prepareCodexAttemptResources(prompt: CodexAttemptPrompt) {
       | undefined,
     runtimeContinuationStarted: false,
     releaseSharedClientLease: undefined as (() => void) | undefined,
+    acquireRecoveryClient: undefined as
+      | ((signal: AbortSignal) => Promise<CodexRecoveryClientLease>)
+      | undefined,
+    remoteRecoveryFailed: false,
     startupClientUnsafe: false,
     turnStartAttempted: false,
     nativeSettlementExpired: false,
@@ -479,34 +481,23 @@ export function prepareCodexAttemptResources(prompt: CodexAttemptPrompt) {
     // Record the attempted settlement before awaiting; failed acknowledgments
     // retire the client, not a second unsubscribe from a competing cleanup path.
     subscriptionSettlement = { thread, retained: false };
-    if (thread.liveThreadOwnership) {
-      try {
-        // This branded handle fences the exact physical client/thread/claim.
-        // Releasing it is required cleanup, not a new foreground-row operation.
-        await thread.liveThreadOwnership.release(thread.threadId);
-        return true;
-      } catch (error) {
-        await closeCodexStartupClientBestEffort(client);
-        throw error;
-      }
-    }
-    if (state.nativeSettlementExpired) {
-      // Untracked cleanup has no exact claim to prove release authority.
-      await closeCodexStartupClientBestEffort(client);
-      return false;
-    }
-    const released = await unsubscribeCodexThreadBestEffort(client, {
-      threadId: thread.threadId,
-      timeoutMs: CODEX_APP_SERVER_UNSUBSCRIBE_TIMEOUT_MS,
+    return await releaseCodexAttemptThreadSubscription({
+      client,
+      thread,
+      recoveryRoute: state.remoteRecoveryFailed ? state.turnRoute : undefined,
+      readCurrentRoute: () => state.turnRoute,
+      cleanupAuthority,
+      nativeSettlementExpired: state.nativeSettlementExpired,
       assertCurrent,
       withCurrent: connection.withCurrent,
     });
-    if (!released) {
-      await closeCodexStartupClientBestEffort(client);
-    }
-    return released;
   };
   const cleanupBeforeActiveTurn = async () => {
+    if (state.remoteRecoveryFailed && state.thread) {
+      await runCleanupStep("codex-pre-turn-disconnected-binding", async () => {
+        await clearThreadBinding();
+      });
+    }
     await runCleanupStep("codex-pre-turn-hook-fallback", () =>
       nativePreToolUseFailures.activateFallback(runAbortController.signal.aborted),
     );

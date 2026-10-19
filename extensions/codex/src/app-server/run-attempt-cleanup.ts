@@ -43,6 +43,18 @@ export async function cleanupCodexAttempt(
   } = lifecycle;
   const { codexModelCallDiagnostics } = requestRuntime;
   const { activeTurnId, abortListener, handle, freezeRunTerminalOutcome } = activeTurn;
+  // Recovery owns a replacement lease and route until its bounded requests settle.
+  await state.connectionRecovery;
+  for (const controller of turnRuntime.pendingDynamicToolAbortControllers) {
+    controller.abort(new Error("Codex attempt execution finished"));
+  }
+  if (resourceState.remoteRecoveryFailed) {
+    // Retain the native inventory and transcript, but fence this unfinished execution
+    // out of subsequent user requests. Never retry its possibly completed effects.
+    await runCleanupStep("codex-disconnected-binding", async () => {
+      await resources.clearThreadBinding();
+    });
+  }
   resourceState.releaseInferenceContext?.();
   resourceState.releaseInferenceContext = undefined;
   // Exact-thread cron authority exists only while this creator turn owns the

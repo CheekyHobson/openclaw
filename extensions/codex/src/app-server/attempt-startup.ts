@@ -17,6 +17,10 @@ import {
   unsubscribeCodexThreadBestEffort,
 } from "./attempt-client-cleanup.js";
 import { buildCodexPluginThreadConfigEligibilityLogData } from "./attempt-diagnostics.js";
+import {
+  createCodexAttemptClientLease,
+  createCodexRecoveryClientAcquirer,
+} from "./attempt-recovery-client.js";
 import { verifyStartupArtifact } from "./attempt-runtime-artifact.js";
 import {
   CODEX_APP_SERVER_STARTUP_MAX_ATTEMPTS,
@@ -64,10 +68,8 @@ import type { CodexBindingAuthority, CodexAppServerBindingStore } from "./sessio
 import {
   clearSharedCodexAppServerClientIfCurrent,
   clearSharedCodexAppServerClientIfCurrentAndUnclaimed,
-  createIsolatedCodexAppServerClient,
   isCodexAppServerStartSelectionChangedError,
   readCodexAppServerClientDesktopGenerationFingerprint,
-  releaseLeasedSharedCodexAppServerClient,
   retireSharedCodexAppServerClientIfCurrent,
   type CodexAppServerClientOptions,
   type CodexAppServerClientFactory,
@@ -218,7 +220,7 @@ export async function startCodexAttemptThread(params: {
             if (startupAbandonController.signal.aborted) {
               throw new CodexAppServerStartupError("aborted");
             }
-            startupClient = await params.attemptClientFactory({
+            const clientOptions: Parameters<typeof params.attemptClientFactory>[0] = {
               // Process startup retains its synchronous admission contract. Ordinary
               // native requests use the retained worker authority at wire admission.
               assertCurrent: () => {
@@ -254,44 +256,44 @@ export async function startCodexAttemptThread(params: {
               },
               abandonSignal: startupAbandonController.signal,
               timeoutMs: params.appServer.requestTimeoutMs,
-            });
-            const activeStartupClient = startupClient;
-            let startupClientLeaseReleased = false;
-            startupClientLease = () => {
-              if (startupClientLeaseReleased) {
-                return;
-              }
-              startupClientLeaseReleased = true;
-              if (params.attemptClientFactory === createIsolatedCodexAppServerClient) {
-                activeStartupClient.close();
-              } else {
-                releaseLeasedSharedCodexAppServerClient(activeStartupClient);
-              }
             };
+            startupClient = await params.attemptClientFactory(clientOptions);
+            const activeStartupClient = startupClient;
+            startupClientLease = createCodexAttemptClientLease(
+              activeStartupClient,
+              params.attemptClientFactory,
+            );
             releaseSharedClientLease = startupClientLease;
             attemptedClient = activeStartupClient;
             startupClientForAbandonedRequestCleanup = activeStartupClient;
             if (startupAbandonController.signal.aborted) {
               throw new CodexAppServerStartupError("aborted");
             }
-            const runtimeArtifact = await verifyStartupArtifact({
-              client: activeStartupClient,
-              startOptions: params.appServer.start,
-              request: params.runtimeArtifactRequest,
-              signal: startupAbandonController.signal,
-            });
+            const verifyArtifact = (client: CodexAppServerClient, signal: AbortSignal) =>
+              verifyStartupArtifact({
+                client,
+                startOptions: params.appServer.start,
+                request: params.runtimeArtifactRequest,
+                signal,
+              });
+            const runtimeArtifact = await verifyArtifact(
+              activeStartupClient,
+              startupAbandonController.signal,
+            );
             params.assertCurrent?.();
-            ensureCodexAppServerClientRuntime(activeStartupClient, {
-              agentDir: params.agentDir,
-              authProfileId: startupRuntimeAuthProfileId,
-              authMode:
-                params.startupPreparedAuth?.kind === "api-key" ||
-                isCodexResponsesOAuth(params.startupPreparedAuth)
-                  ? "prepared-api-key"
-                  : "profile",
-              authProfileStore: startupRuntimeAuthProfileStore ?? attemptParams.authProfileStore,
-              config: params.config,
-            });
+            const initializeRuntime = (client: CodexAppServerClient) =>
+              ensureCodexAppServerClientRuntime(client, {
+                agentDir: params.agentDir,
+                authProfileId: startupRuntimeAuthProfileId,
+                authMode:
+                  params.startupPreparedAuth?.kind === "api-key" ||
+                  isCodexResponsesOAuth(params.startupPreparedAuth)
+                    ? "prepared-api-key"
+                    : "profile",
+                authProfileStore: startupRuntimeAuthProfileStore ?? attemptParams.authProfileStore,
+                config: params.config,
+              });
+            initializeRuntime(activeStartupClient);
             const turnRouter = getCodexAppServerTurnRouter(activeStartupClient);
             let computerUseTools: string[] = [];
             let computerUseConfig = params.computerUseConfig;
@@ -551,6 +553,13 @@ export async function startCodexAttemptThread(params: {
               startupAttemptSucceeded = true;
               return {
                 client: activeStartupClient,
+                acquireRecoveryClient: createCodexRecoveryClientAcquirer({
+                  attemptClientFactory: params.attemptClientFactory,
+                  clientOptions,
+                  assertCurrent: params.assertCurrent,
+                  verifyArtifact,
+                  initializeRuntime,
+                }),
                 turnRouter,
                 turnRoute: startupRoute,
                 thread: startupThread,
