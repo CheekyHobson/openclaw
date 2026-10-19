@@ -266,6 +266,10 @@ export async function runWithInProcessGatewaySessionMutation<T>(
   method: "agent" | "sessions.send",
   params: { sessionKey: string; agentId?: string },
   run: (assertCurrent: () => void) => Promise<T> | T,
+  options?: Pick<
+    DispatchGatewayMethodInProcessOptions,
+    "pluginRuntimeOwnerId" | "operatorRoleActor"
+  >,
 ): Promise<T> {
   const assertCallerCurrent = captureGatewayToolCallerAssertion();
   const requestParams =
@@ -273,7 +277,7 @@ export async function runWithInProcessGatewaySessionMutation<T>(
   return await withInProcessGatewayDispatch(
     method,
     requestParams,
-    { forceSyntheticClient: true, syntheticScopeMode: "minimum" },
+    { ...options, forceSyntheticClient: true, syntheticScopeMode: "minimum" },
     async (resolved) => {
       const [{ authorizeGatewayRequestPreDispatch }, { createRequestGatewayMethodRegistry }] =
         await Promise.all([

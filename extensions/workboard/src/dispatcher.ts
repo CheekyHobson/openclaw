@@ -13,7 +13,6 @@ import {
 import type { PluginRuntime } from "openclaw/plugin-sdk/plugin-runtime";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { canonicalPathFromExistingAncestor } from "openclaw/plugin-sdk/security-runtime";
-import { replaceArchivedSubagentSession } from "openclaw/plugin-sdk/session-store-runtime";
 import {
   assertRestrictedWorkboardTarget,
   cleanupWorkboardCardWorktree,
@@ -366,6 +365,8 @@ async function runWorkboardDispatch(
           await assertRestrictedTarget(canonicalSourcePath);
         }
       }
+      const { replaceArchivedSubagentSession } =
+        await import("openclaw/plugin-sdk/session-store-runtime");
       if (
         await replaceArchivedSubagentSession({
           sessionKey,

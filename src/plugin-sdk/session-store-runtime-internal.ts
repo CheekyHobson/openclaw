@@ -1,10 +1,110 @@
-import type { SessionAccessScope } from "../config/sessions/session-accessor.js";
+import { randomUUID } from "node:crypto";
+import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
+import {
+  applySessionEntryLifecycleMutation,
+  type SessionAccessScope,
+} from "../config/sessions/session-accessor.js";
+import { preserveSqliteSameKeySessionRolloverLineage } from "../config/sessions/session-entry-lineage.js";
 import { projectPublicSessionEntry } from "../config/sessions/session-entry-projection.js";
+import { preserveCreationStamp } from "../config/sessions/session-entry-provenance.js";
 import {
   readSessionEntryByIdReadOnlyInWorker,
   readSessionEntryReadOnlyInWorker,
 } from "../config/sessions/session-entry-read-runtime.js";
+import {
+  composeSessionSourceAssertion,
+  runWithSessionSourceScope,
+} from "../config/sessions/session-source-authority.js";
+import { resolveSessionWorkStartBlock } from "../config/sessions/session-work-start.js";
 import type { InternalSessionEntry, SessionEntry } from "../config/sessions/types.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { resolveSessionStoreIdentity } from "../gateway/session-store-key.js";
+import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
+import { isSubagentSessionKey } from "../routing/session-key.js";
+
+/** Replace an automation-owned archived subagent incarnation, retaining its transcript lineage. */
+export async function replaceArchivedSubagentSession(params: {
+  sessionKey: string;
+  getConfig: () => OpenClawConfig;
+  assertCurrent?: () => void;
+}): Promise<boolean> {
+  const cfg = params.getConfig();
+  const { agentId, canonicalKey: sessionKey } = resolveSessionStoreIdentity({
+    cfg,
+    sessionKey: params.sessionKey,
+  });
+  if (!isSubagentSessionKey(sessionKey)) {
+    throw new Error("Only automation-owned subagent sessions can be replaced after archival.");
+  }
+  const storePath = resolveSessionStorePathCore(cfg.session?.store, { agentId });
+  const assertCurrent = composeSessionSourceAssertion([params.assertCurrent], (assertSources) => {
+    assertSources();
+    if (params.getConfig() !== cfg) {
+      throw new Error("Session configuration changed before archived worker replacement. Retry.");
+    }
+  });
+  assertCurrent();
+  const entry = await getSessionEntryAsync({ agentId, sessionKey, storePath });
+  assertCurrent();
+  if (entry?.archivedAt === undefined) {
+    return false;
+  }
+  const { runWithInProcessGatewaySessionMutation } =
+    await import("../gateway/server-plugin-in-process-dispatch.js");
+  const scope = getPluginRuntimeGatewayRequestScope();
+  return await runWithInProcessGatewaySessionMutation(
+    "agent",
+    { sessionKey, agentId },
+    async (assertAuthorized) => {
+      const authority = composeSessionSourceAssertion([assertCurrent, assertAuthorized]);
+      let replaced = false;
+      await applySessionEntryLifecycleMutation({
+        agentId,
+        storePath,
+        activeSessionKey: sessionKey,
+        skipMaintenance: true,
+        withCommit: (run) =>
+          runWithSessionSourceScope(authority, () => run(authority), { checkAfter: false }),
+        upserts: [
+          {
+            sessionKey,
+            buildEntry: ({ currentEntry }) => {
+              authority();
+              if (currentEntry?.archivedAt === undefined) {
+                return undefined;
+              }
+              const block = resolveSessionWorkStartBlock(sessionKey, currentEntry);
+              if (block?.reason !== "archived" || currentEntry.modelSelectionLocked) {
+                throw block ?? new Error("Archived worker session cannot be replaced.");
+              }
+              const now = Date.now();
+              replaced = true;
+              return preserveCreationStamp(
+                preserveSqliteSameKeySessionRolloverLineage({
+                  sessionKey,
+                  previous: currentEntry,
+                  next: {
+                    sessionId: randomUUID(),
+                    lifecycleRevision: randomUUID(),
+                    updatedAt: now,
+                    sessionStartedAt: now,
+                    pluginOwnerId: currentEntry.pluginOwnerId,
+                  },
+                }),
+                currentEntry,
+              );
+            },
+          },
+        ],
+      });
+      return replaced;
+    },
+    {
+      pluginRuntimeOwnerId: scope?.pluginId,
+      ...(!scope?.client ? { operatorRoleActor: { kind: "system" as const } } : {}),
+    },
+  );
+}
 
 export type SessionStoreReadParams = {
   agentId?: string;
