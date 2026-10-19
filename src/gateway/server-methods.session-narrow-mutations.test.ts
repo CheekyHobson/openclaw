@@ -26,7 +26,10 @@ import { sessionAbortHandlers } from "./server-methods/sessions-abort.js";
 import { sessionCreateHandlers } from "./server-methods/sessions-create.js";
 import { sessionMessagingHandlers } from "./server-methods/sessions-messaging.js";
 import { sessionMutationHandlers } from "./server-methods/sessions-mutations.js";
-import type { GatewayRequestHandler } from "./server-methods/types.js";
+import type {
+  GatewayRequestHandler,
+  GatewayRequestHandlerOptions,
+} from "./server-methods/types.js";
 import { resolveSessionSharingTargetAsync } from "./session-sharing.js";
 import { roleClient, rolePolicyConfig } from "./session-sharing.test-utils.js";
 
@@ -198,7 +201,7 @@ describe("invocation-owned session mutations", () => {
           : "handleDirectExternalChatSend",
       );
       if (!drift) {
-        send.mockImplementation(async (options) => {
+        send.mockImplementation(async (options: GatewayRequestHandlerOptions) => {
           readGatewayRequestMutationAuthority(options).assertCurrent();
           options.sessionMutationAuthorization?.assertCurrent();
           const entry = loadSessionEntry({ agentId: "main", sessionKey: targetKey });
