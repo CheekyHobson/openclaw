@@ -131,7 +131,7 @@ describe("extractApplyPatchTargetPaths", () => {
     expect(extractApplyPatchTargetPaths(patch)).toEqual([cwdPath("real.ts")]);
   });
 
-  it("can resolve paths with the same cwd semantics as apply_patch execution", () => {
+  it("can resolve paths with the same cwd semantics as apply_patch execution", async () => {
     const cwd = path.join(os.tmpdir(), "openclaw-derived-paths");
     const patch = [
       "*** Begin Patch",
@@ -143,7 +143,7 @@ describe("extractApplyPatchTargetPaths", () => {
       "+y",
       "*** End Patch",
     ].join("\n");
-    expect(extractApplyPatchTargetPaths(patch, { cwd })).toEqual([
+    await expect(extractResolvedApplyPatchTargetPaths(patch, { cwd })).resolves.toEqual([
       path.join(cwd, "resolved.ts"),
       path.join(os.homedir(), "renamed-source.ts"),
       path.join("/tmp", "openclaw-target.ts"),
@@ -175,9 +175,10 @@ describe("extractApplyPatchTargetPaths", () => {
           path.join(literalParent, "existing.md"),
           path.join(literalParent, "new.md"),
         ];
-        expect(extractApplyPatchTargetPaths(patch, options)).toEqual(expected);
+        await expect(extractResolvedApplyPatchTargetPaths(patch, options)).resolves.toEqual(
+          expected,
+        );
         const mentionedPatch = patch.replaceAll("File: @notes/", "File: @@notes/");
-        expect(extractApplyPatchTargetPaths(mentionedPatch, options)).toEqual(expected);
         await expect(
           extractResolvedApplyPatchTargetPaths(mentionedPatch, options),
         ).resolves.toEqual(expected);
@@ -203,13 +204,13 @@ describe("extractApplyPatchTargetPaths", () => {
     ]);
   });
 
-  it("skips sandbox paths the bridge rejects", () => {
+  it("skips sandbox paths the bridge rejects", async () => {
     const patch = envelope(
       "*** Add File: /workspace/src/ok.ts\n+x",
       "*** Add File: /outside.ts\n+y",
     );
-    expect(
-      extractApplyPatchTargetPaths(patch, {
+    await expect(
+      extractResolvedApplyPatchTargetPaths(patch, {
         cwd: "/workspace",
         sandbox: {
           root: "/workspace",
@@ -227,7 +228,7 @@ describe("extractApplyPatchTargetPaths", () => {
           } as never,
         },
       }),
-    ).toEqual(["/host/workspace/src/ok.ts"]);
+    ).resolves.toEqual(["/host/workspace/src/ok.ts"]);
   });
 
   it("does not require the begin/end envelope markers to be present", () => {

@@ -64,27 +64,14 @@ export async function resolveApplyPatchInputPath(
     : referenced;
 }
 
-function normalizePatchPath(
-  raw: string,
-  options: ApplyPatchPathExtractionOptions = {},
-): string | undefined {
+function normalizePatchPath(raw: string): string | undefined {
   if (raw.length === 0) {
     return undefined;
   }
-  const cwd = options.cwd ?? options.sandbox?.root ?? process.cwd();
+  const cwd = process.cwd();
   try {
     const filePath = preserveAtPrefixedRelativePath(raw, cwd);
-    const resolved = options.sandbox
-      ? options.sandbox.bridge.resolvePath({
-          filePath,
-          cwd,
-        })
-      : undefined;
-    const normalized = path.normalize(
-      resolved
-        ? (resolved.hostPath ?? resolved.containerPath)
-        : resolveSandboxInputPath(filePath, cwd),
-    );
+    const normalized = path.normalize(resolveSandboxInputPath(filePath, cwd));
     return normalized && normalized !== "." ? normalized : undefined;
   } catch {
     return undefined;
@@ -92,13 +79,10 @@ function normalizePatchPath(
 }
 
 /** Resolve distinct target paths without admitting or executing the patch. */
-export function extractApplyPatchTargetPaths(
-  input: unknown,
-  options: ApplyPatchPathExtractionOptions = {},
-): string[] {
+export function extractApplyPatchTargetPaths(input: unknown): string[] {
   const paths = new Set<string>();
   for (const target of extractApplyPatchTargets(input)) {
-    const normalized = normalizePatchPath(target.path, options);
+    const normalized = normalizePatchPath(target.path);
     if (normalized) {
       paths.add(normalized);
     }
