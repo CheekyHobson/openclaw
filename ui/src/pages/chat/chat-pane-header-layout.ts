@@ -106,7 +106,8 @@ export abstract class ChatPaneHeaderLayout extends ChatPaneBrowserAnnotationRend
     destinations.dashboard =
       this.dashboardControls !== undefined &&
       ((destinations.main && main?.slot === "dashboard") ||
-        (destinations.side && side?.slot === "dashboard"));
+        (destinations.side && side?.slot === "dashboard") ||
+        (this.usesMobileHost && isSidebarSlotVisible(sidebarLayout, "dashboard")));
     nativeHeader.panelActionDestinations = destinations;
     nativeHeader.setDashboardControls = this.setDashboardControls;
     const dashboard = panelDefinitions.find((definition) => definition.slot === "dashboard");

@@ -176,7 +176,13 @@ export function ChatPaneHeader(props: ChatPaneHeaderProps) {
   const detailsGlyph = <DetailsGlyph />;
   // One retained picker follows Dashboard between its side and main surfaces.
   // Its facts come directly from this reactive native header projection.
-  const dashboardControls = <ChatDashboardMenu {...props} widgetMenu={props.dashboardWidgetMenu} />;
+  const dashboardControls = (
+    <ChatDashboardMenu
+      {...props}
+      mobile={props.mergedChrome}
+      widgetMenu={props.dashboardWidgetMenu}
+    />
+  );
   onSettled(() => {
     props.setDashboardControls?.(dashboardControls);
   });

@@ -353,7 +353,9 @@ export abstract class ChatPaneHeader extends ChatPaneDiscussion {
           requestBackgroundPanel: (slot) => this.requestBackgroundPanel(slot, "toggle"),
         }),
     );
-    const defaultAction = !catalog && this.dashboardDefaultMenuAction(row, currentLayout);
+    // Mobile projects panel geometry; shared defaults use the retained owner layout.
+    const defaultAction =
+      !catalog && this.dashboardDefaultMenuAction(row, this.state?.sidebarLayout);
     const layoutMenuActions: HeaderMenuQuickAction[] = defaultAction
       ? [{ id: "dashboard-default", icon: "check", ...defaultAction }]
       : [];
