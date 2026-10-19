@@ -72,13 +72,15 @@ it("bounds live projection over idle history through admission, progress, drain,
     const prepareOriginal = projection.prepareSelection.bind(projection);
     const prepare = vi.spyOn(projection, "prepareSelection");
     const inspectors = createGatewayServerActiveWorkInspectors({ ...context, cron: {} });
-    const inspectedKeys = new Set<string>();
+    const inspectTerminal = vi.spyOn(inspectors, "getTerminalPersistence");
+    const inspectHolders = vi.spyOn(inspectors, "getChatRunHolders");
+    const inspectedKeys = new Map<string, number>();
     const createProjector = activeRuns.createVisibleActiveSessionRunProjector;
     vi.spyOn(activeRuns, "createVisibleActiveSessionRunProjector").mockImplementation((...args) => {
       const project = createProjector(...args);
       return Object.assign(
         (params: Parameters<typeof project>[0]) => {
-          inspectedKeys.add(params.canonicalKey);
+          inspectedKeys.set(params.canonicalKey, (inspectedKeys.get(params.canonicalKey) ?? 0) + 1);
           return project(params);
         },
         { candidateSessionIdsOrKeys: project.candidateSessionIdsOrKeys },
@@ -154,7 +156,10 @@ it("bounds live projection over idle history through admission, progress, drain,
       const snapshot = await withinTest(next.promise, test.signal);
       next = createDeferredCore<GatewayWorkMetricsSnapshot>();
       expect(snapshot).toEqual({ sessions: { running, queued: queuedSessions }, work });
+      expect(inspectTerminal).not.toHaveBeenCalled();
+      expect(inspectHolders).not.toHaveBeenCalled();
       expect(inspectedKeys.size).toBe(running + queuedSessions);
+      expect([...inspectedKeys.values()]).toEqual(Array(running + queuedSessions).fill(1));
       const list = await sessionReads.listSessions({
         client,
         context,
@@ -165,6 +170,8 @@ it("bounds live projection over idle history through admission, progress, drain,
         queued: list.sessions.filter((row) => row.status === "queued").length,
       });
       expect(createGatewayActiveWorkSnapshot(inspectors).counts).toMatchObject(snapshot.work);
+      inspectTerminal.mockClear();
+      inspectHolders.mockClear();
     };
     try {
       setDiagnosticsEnabledForProcess(false);

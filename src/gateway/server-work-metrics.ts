@@ -1,8 +1,6 @@
+import { getActiveAgentRunContextCount } from "../infra/agent-run-registry.js";
 import { areDiagnosticsEnabledForProcess } from "../infra/diagnostic-events.js";
-import {
-  createGatewayActiveWorkSnapshot,
-  type GatewayActiveWorkInspectors,
-} from "../infra/gateway-active-work.js";
+import type { GatewayActiveWorkInspectors } from "../infra/gateway-active-work.js";
 import { onGatewayWorkMetricsChanged } from "../infra/gateway-work-metrics-events.js";
 import {
   hasGatewayWorkMetricsListeners,
@@ -14,9 +12,13 @@ import { sessionChanges } from "../sessions/session-row-changes.js";
 import { runInDetachedAsyncContext } from "../shared/detached-async-context.js";
 import { runSynchronousWork } from "../shared/synchronous-work.js";
 import { createGatewayServerActiveWorkInspectors } from "./server-active-work.js";
+import { createVisibleActiveSessionRunProjector } from "./server-methods/session-active-runs.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";
+import { prepareSessionRowPublication } from "./session-row-presentation.js";
 import { getSessionRowProjection } from "./session-row-projection-access.js";
-import { prepareProjectedSessionList, selectSessionEntries } from "./session-utils-list.js";
+import { prepareSessionRowSelection, selectSessionEntries } from "./session-utils-list.js";
+
+const workCount = (value: number) => (Number.isFinite(value) && value > 0 ? Math.floor(value) : 0);
 
 /** Share the server's activity view with maintenance and the lifetime-owned exporter source. */
 export function startGatewayActiveWork(
@@ -56,29 +58,61 @@ export function startGatewayWorkMetrics(params: {
     }
     await projection.withSelectionPreparation(async () => {
       do {
-        await projection.prepareSelection({ yieldForCatalog: true });
+        await projection.prepareSelection({ metadataOnly: true });
         if (stopped || !needed() || projection !== getSessionRowProjection(params.context)) {
           return;
         }
-      } while (projection.needsSelectionPreparation());
-      const { prepared, presentation, filters } = prepareProjectedSessionList({
+      } while (projection.needsSelectionPreparation({ metadataOnly: true }));
+      const now = Date.now();
+      const projectRun = createVisibleActiveSessionRunProjector(
+        projection.state.rowContext.projectedAgentRuns,
+        undefined,
+        params.context.resolveGatewayContext,
+        projection.physicalPaths,
+      );
+      const presentation = prepareSessionRowPublication(projection, now)(undefined, projectRun);
+      const prepared = prepareSessionRowSelection(
         projection,
-        context: params.context,
-        opts: { activeOnly: true, includeGlobal: true, includeUnknown: true },
-        now: Date.now(),
-        metadataPrepared: true,
-      });
-      const selection = runSynchronousWork(selectSessionEntries(filters));
+        {
+          activeOnly: true,
+          includeGlobal: true,
+          includeUnknown: true,
+        },
+        {
+          now,
+          rowContext: presentation.rowContext,
+          metadataPrepared: true,
+          ordered: true,
+          candidateSessionIdsOrKeys: projectRun.candidateSessionIdsOrKeys(),
+        },
+      );
+      const states = new Map<string, "running" | "queued">();
+      const selection = runSynchronousWork(
+        selectSessionEntries({
+          ...prepared,
+          entriesSorted: true,
+          entryFilter: (key) => {
+            const active = presentation.active(prepared.getTarget(key)!)!;
+            if (active.active) {
+              states.set(key, active.status ?? "running");
+            }
+            return active.active;
+          },
+        }),
+      );
       const sessions = { running: 0, queued: 0 };
       for (const [key] of selection.entries) {
-        const target = prepared.getTarget(key)!;
-        const active = presentation.active(target)!;
-        sessions[active.status === "queued" ? "queued" : "running"]++;
+        sessions[states.get(key)!]++;
       }
-      const { agentRuns, chatRuns, queuedTurns } = createGatewayActiveWorkSnapshot(
-        params.inspectors,
-      ).counts;
-      publishGatewayWorkMetrics({ sessions, work: { agentRuns, chatRuns, queuedTurns } });
+      // Metrics consume these three counts, not suspension blockers or holder descriptions.
+      publishGatewayWorkMetrics({
+        sessions,
+        work: {
+          agentRuns: workCount((params.inspectors.getAgentRuns ?? getActiveAgentRunContextCount)()),
+          chatRuns: workCount(params.inspectors.getChatRuns?.() ?? 0),
+          queuedTurns: workCount(params.inspectors.getQueuedTurns?.() ?? 0),
+        },
+      });
     });
   };
   const changed = () => {

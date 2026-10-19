@@ -591,3 +591,49 @@ it("rotates incarnation aliases while retaining exact late-writer lineage", asyn
     },
   );
 });
+
+it("keeps every incarnation addressable when an unbound operation moves keys", async () => {
+  const operation = createReplyOperation({
+    sessionKey: key,
+    sessionId: "old-id",
+    resetTriggered: false,
+  });
+  try {
+    operation.updateSessionId("new-id");
+    operation.updateSessionKey(key + ":moved");
+    for (const sessionId of ["old-id", "new-id"]) {
+      expect(getSessionControllerOperation(sessionId)).toBe(operation);
+      expect(resolveReplyRunForCurrentSessionId(sessionId)).toEqual({ kind: "one", operation });
+    }
+  } finally {
+    operation.complete();
+    await operation.ownerSettlement;
+  }
+  for (const sessionId of ["old-id", "new-id"]) {
+    expect(resolveReplyRunForCurrentSessionId(sessionId)).toEqual({ kind: "none" });
+    expect(getSessionControllerOperation(sessionId)).toBeUndefined();
+  }
+});
+
+it("selects a session identity without inspecting unrelated operations", async () => {
+  const operation = createReplyOperation({
+    sessionKey: key,
+    sessionId: "selected-id",
+    resetTriggered: false,
+  });
+  const unrelated = createReplyOperation({
+    sessionKey: key + ":unrelated",
+    sessionId: "unrelated-id",
+    resetTriggered: false,
+  });
+  try {
+    using inspectUnrelated = vi.spyOn(unrelated, "hasOwnedSessionId");
+    expect(resolveReplyRunForCurrentSessionId("selected-id")).toEqual({ kind: "one", operation });
+    expect(resolveReplyRunForCurrentSessionId("missing-id")).toEqual({ kind: "none" });
+    expect(inspectUnrelated).not.toHaveBeenCalled();
+  } finally {
+    operation.complete();
+    unrelated.complete();
+    await Promise.all([operation.ownerSettlement, unrelated.ownerSettlement]);
+  }
+});

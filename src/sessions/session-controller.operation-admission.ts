@@ -110,7 +110,10 @@ export function adoptReplyOperationController(
     }
   }
   owner.active = operation;
-  addSessionControllerEntryAlias(owner, operation.sessionId);
+  // Targetless moves must also carry every earlier incarnation to the new owner.
+  for (const sessionId of operation.captureOwnedSessionIds()) {
+    addSessionControllerEntryAlias(owner, sessionId);
+  }
   controllerEntryByOperation.set(operation, owner);
   retainSessionControllerOperation(operation);
   if (mailboxClaim) {

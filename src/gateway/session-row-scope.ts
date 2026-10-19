@@ -274,7 +274,10 @@ export function prepareSessionRowScopes(
       admittedPaths.set(identity, locator);
     }
   }
-  const aliases = new Map<string, Map<string, string>>();
+  const physicalPathsByLocator = new Map<string, readonly string[]>(
+    [...residentPaths.values()].map((locator) => [locator, [locator]]),
+  );
+  const aliases = new Map<string, Map<string, readonly string[]>>();
   const capture = (options: { agentId?: string; configuredAgentsOnly?: boolean }) => {
     try {
       const key = options.agentId
@@ -295,8 +298,9 @@ export function prepareSessionRowScopes(
         const separator = identity.indexOf("\0");
         const agentId = identity.slice(0, separator);
         const locator = path.resolve(identity.slice(separator + 1));
-        const owners = aliases.get(locator) ?? new Map<string, string>();
-        owners.set(agentId, residentPath(physical.storePath));
+        const owners = aliases.get(locator) ?? new Map<string, readonly string[]>();
+        const pathname = residentPath(physical.storePath);
+        owners.set(agentId, [pathname]);
         aliases.set(locator, owners);
       }
       const paths = resolved.durableTargets.map((target) =>
@@ -322,6 +326,10 @@ export function prepareSessionRowScopes(
   const configured = capture({ configuredAgentsOnly: true });
   const agents = new Map(
     [...new Set([...ownerAgentIds, ...agentIds])].map((agentId) => [agentId, capture({ agentId })]),
+  );
+  // These arrays belong to the prepared topology, not to each row publication.
+  const aliasPaths = new Map(
+    [...aliases].map(([locator, owners]) => [locator, [...new Set([...owners.values()].flat())]]),
   );
   const select = (options: { agentId?: string; configuredAgentsOnly?: boolean }) => {
     const requestedAgentId = options.agentId?.trim()
@@ -354,10 +362,9 @@ export function prepareSessionRowScopes(
       }
       const owners = aliases.get(normalized);
       return agentId
-        ? [owners?.get(normalizeAgentId(agentId)) ?? normalized]
-        : owners
-          ? [...new Set(owners.values())]
-          : [normalized];
+        ? (owners?.get(normalizeAgentId(agentId)) ??
+            physicalPathsByLocator.get(normalized) ?? [normalized])
+        : (aliasPaths.get(normalized) ?? physicalPathsByLocator.get(normalized) ?? [normalized]);
     },
   };
 }

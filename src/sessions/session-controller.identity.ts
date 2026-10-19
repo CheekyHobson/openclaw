@@ -72,7 +72,7 @@ export function resolveReplyRunForCurrentSessionId(sessionId: string): ReplyRunI
   if (!id) {
     return { kind: "none" };
   }
-  const matches = [...controllerStorage.sessionControllers.values()].filter(
+  const matches = [...(controllerStorage.sessionControllerEntriesByAlias.get(id) ?? [])].filter(
     (entry) => entry.active?.hasOwnedSessionId(id) === true,
   );
   if (matches.length === 0) {
