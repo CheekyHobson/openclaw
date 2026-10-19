@@ -218,6 +218,39 @@ chat Details. Optional `--request-stacks` adds caller stacks for diagnosis;
 leave it off for paired timing. Use only synthetic requests:
 parameters and stacks are retained, while auth and response payloads are omitted.
 
+For active-session loads, add `--activity-session <synthetic-key>` and configure
+that isolated Gateway with two loopback mock-provider models:
+
+```sh
+node --import ./scripts/tsx.mjs scripts/perf/catalog-polling-measure.ts \
+  --url 'http://127.0.0.1:40967/#token=synthetic-token' \
+  --load-runs 1 --load-path /chat/main --expect-session agent:main:main \
+  --activity-session agent:main:main --duration 60 --interval-ms 2000 \
+  --request-stacks --output /path/to/active-chat.json
+```
+
+The driver cycles a model selection, the same selection with a changed label, a
+status/pinning/thinking patch, and a real chat turn. Models default to
+`openai/gpt-5.6-sol,openai/gpt-5.6-luna`; override with `--activity-models` to match
+synthetic configuration. Each turn must finish successfully through `agent.wait`.
+Add `--activity-cron --open-details` to include forced runs of a temporary disabled
+cron job while Details is visible; this requires an `agent:<agent-id>:main` session.
+Each cron run must finish within a bounded wait and reach the browser as a matching
+finished event before the driver records success.
+The driver binds the job to that agent and session and removes it afterward;
+cleanup failures remain in the report.
+Use `/dashboard/main` to exercise the same session's board surface.
+
+The activity window begins after readiness and five seconds of settling. Its
+fixed action count is `floor(duration * 1000 / interval-ms)`; startup time never
+reduces the workload. Reports retain activity start/end, action latency, warm
+Long Task blocking, and the event preceding each catalog request. Session event
+metadata includes catalog-change flags, model-selection revisions, and lifecycle
+phases; message and response bodies are excluded. Caller stacks are diagnostic
+only. With `--start-at`, the active window begins thirty seconds after the
+scheduled navigation and fails if readiness misses that deadline. Use one load
+per invocation for paired activity measurements.
+
 For paired activity measurements, use `--start-at <epoch-ms>` with the same future
 time on both sides; it gates the runtime window after browser readiness and
 rejects a missed deadline. Hold the host's shared measurement lock, use separate
@@ -486,6 +519,18 @@ Use list request timestamps to identify polls overlapping release; whole-round
 latency alone can hide a burst. Existing completion, concurrency, event-order,
 and fanout checks still apply. This fixture uses synthetic model streams;
 provider latency and external tool execution are outside this comparison.
+
+Use `--stream-start-allocations` to sample main-isolate allocations, including
+collected objects, from before admission through release plus 500 ms. This writes
+`stream-start-<round>.heapprofile` and diagnostics sidecars. It cannot be combined
+with whole-round `--allocations`. Divide sampled bytes by `runCount` for bytes per
+started stream; `observedSessionPublications` counts `session.message` and
+`sessions.changed` received by the first viewer during capture. This is a received
+publication denominator, so events still in flight at the boundary are excluded.
+Sampling and stopping/serializing the profile add overhead; keep these attribution
+runs separate from unprofiled acceptance timing. `--trace-gc` adds V8 GC logging to
+the owned Gateway's log only. With `--active-work-diagnostics`, each successful
+held-stream scrape is retained as `held-streams-<cohort>.prom` for GC counter context.
 
 `eventBytes` measures the exact received, uncompressed JSON frame bytes,
 including the event envelope, before parsing. `sessionEventSizes` splits session
