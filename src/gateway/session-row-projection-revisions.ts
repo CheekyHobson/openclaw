@@ -1,6 +1,6 @@
 import { isIncognitoSessionKey, normalizeAgentId } from "../routing/session-key.js";
 import type { SessionRowChange } from "../sessions/session-row-changes.js";
-import { notifyListeners } from "../shared/listeners.js";
+import { notifyListeners, registerListener } from "../shared/listeners.js";
 import {
   identity,
   selectionRow,
@@ -20,6 +20,7 @@ export function createSessionRowProjectionRevisions(
   let sharing: object | undefined;
   let selection: object | undefined;
   const selectionListeners = new Set<(change: SelectionChange) => void>();
+  const activeSessionListeners = new Set<() => void>();
   const factsListeners = new Set<(change: FactsChange) => void>();
   const publishFacts = (row?: Pick<Row, "key">) => {
     const change: FactsChange = row ? { kind: "row", key: row.key } : { kind: "reset" };
@@ -36,6 +37,9 @@ export function createSessionRowProjectionRevisions(
   const publishSelection = (row?: Row, removed = false) => {
     if (!row) {
       invalidate(true);
+    }
+    if (!row || removed) {
+      notifyListeners(activeSessionListeners, undefined);
     }
     const change: SelectionChange = row
       ? {
@@ -54,9 +58,9 @@ export function createSessionRowProjectionRevisions(
   return {
     onSelectionChange(this: void, listener: (change: SelectionChange) => void) {
       selectionListeners.add(listener);
-      return () => {
-        selectionListeners.delete(listener);
-      };
+    },
+    onActiveSessionChange(this: void, listener: () => void) {
+      return registerListener(activeSessionListeners, listener);
     },
     onFactsChange(this: void, listener: (change: FactsChange) => void) {
       factsListeners.add(listener);
@@ -107,6 +111,7 @@ export function createSessionRowProjectionRevisions(
       publishSelection();
       publishFacts();
       selectionListeners.clear();
+      activeSessionListeners.clear();
       factsListeners.clear();
     },
     sharing: () => (sharing ??= {}),
@@ -130,6 +135,19 @@ export function createSessionRowProjectionRevisions(
       publishFacts(row);
       if (changed) {
         publishSelection(row);
+        // Identity is fixed by put(); counts need eligibility, not display/order updates.
+        if (
+          activeSessionListeners.size > 0 &&
+          (!previous ||
+            Boolean(previous.entry) !== Boolean(row.entry) ||
+            previous.entry?.sessionId !== row.entry?.sessionId ||
+            (previous.entry?.archivedAt !== undefined) !== (row.entry?.archivedAt !== undefined) ||
+            previous.entry?.spawnedBy !== row.entry?.spawnedBy ||
+            previous.entry?.parentSessionKey !== row.entry?.parentSessionKey ||
+            previous.selection.isPhantom !== row.selection.isPhantom)
+        ) {
+          notifyListeners(activeSessionListeners, undefined);
+        }
       }
     },
   };

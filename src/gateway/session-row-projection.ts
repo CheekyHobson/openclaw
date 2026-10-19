@@ -626,6 +626,7 @@ export async function createSessionRowProjection(params: records.ProjectionOptio
       runInOwner: inOwnerContext,
     }),
     onSelectionChange: revisions.onSelectionChange,
+    onActiveSessionChange: revisions.onActiveSessionChange,
     onFactsChange: revisions.onFactsChange,
     get physicalPaths() {
       return scope.physicalPaths;

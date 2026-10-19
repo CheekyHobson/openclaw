@@ -258,11 +258,44 @@ it("bounds live projection over idle history through admission, progress, drain,
       notifyGatewayWorkMetricsChanged();
       const liveWork = { agentRuns: 1, chatRuns: 1, queuedTurns: 1 };
       await read(1, 1, liveWork);
+      const recount = vi.spyOn(projection, "countActiveSessions");
+      sessionChanges.emit({ sessionKey: "agent:main:chat", agentId: "main", scope: "runtime" });
+      const updateChat = (archivedAt?: number) =>
+        applySessionEntryCanonicalReplacements({
+          agentId: "main",
+          storePath,
+          sessionKeys: ["agent:main:chat"],
+          skipMaintenance: true,
+          update: () => ({
+            replacements: [
+              {
+                sessionKey: "agent:main:chat",
+                previousSessionKeys: [],
+                entry: {
+                  sessionId: "chat",
+                  updatedAt: 2,
+                  displayName: "Updated title",
+                  visibility: "shared" as const,
+                  ...(archivedAt !== undefined ? { archivedAt } : {}),
+                },
+              },
+            ],
+            result: undefined,
+          }),
+        });
+      await updateChat();
+      await vi.runOnlyPendingTimersAsync();
+      expect(recount).not.toHaveBeenCalled();
+      expect(latest).toEqual({ sessions: { running: 1, queued: 1 }, work: liveWork });
       releaseWait?.();
       markReplyOperationExecutionStarted(reply);
       await read(2, 0, liveWork);
       requestRpcSourceCancellation(queued, new Error("queued turn stopped"));
       await queued.input.settlement.promise;
+      await read(2, 0, { ...liveWork, queuedTurns: 0 });
+      await updateChat(0);
+      await read(1, 0, { ...liveWork, queuedTurns: 0 });
+      await updateChat();
       await read(2, 0, { ...liveWork, queuedTurns: 0 });
       releaseReply();
       await replySource.input.settlement.promise;

@@ -1,4 +1,8 @@
-import { getActiveAgentRunContextCount } from "../infra/agent-run-registry.js";
+import { getSubagentRegistryPublicationRevision } from "../agents/subagents/registry/subagent-registry-publication.js";
+import {
+  getActiveAgentRunContextCount,
+  readAgentRunIndexVersion,
+} from "../infra/agent-run-registry.js";
 import { areDiagnosticsEnabledForProcess } from "../infra/diagnostic-events.js";
 import type { GatewayActiveWorkInspectors } from "../infra/gateway-active-work.js";
 import { onGatewayWorkMetricsChanged } from "../infra/gateway-work-metrics-events.js";
@@ -8,7 +12,7 @@ import {
   publishGatewayWorkMetrics,
 } from "../infra/gateway-work-metrics.js";
 import type { SubsystemLogger } from "../logging/subsystem.js";
-import { sessionChanges } from "../sessions/session-row-changes.js";
+import { isSessionStoreTopologyChange, sessionChanges } from "../sessions/session-row-changes.js";
 import { runInDetachedAsyncContext } from "../shared/detached-async-context.js";
 import { createGatewayServerActiveWorkInspectors } from "./server-active-work.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";
@@ -41,7 +45,7 @@ export function startGatewayWorkMetrics(params: {
   const needed = () => areDiagnosticsEnabledForProcess() && hasGatewayWorkMetricsListeners();
 
   let observedProjection: ReturnType<typeof getSessionRowProjection>;
-  let unsubscribeSelection: (() => void) | undefined;
+  let unsubscribeActiveSessions: (() => void) | undefined;
   const refresh = () => {
     if (!needed()) {
       return;
@@ -51,9 +55,9 @@ export function startGatewayWorkMetrics(params: {
       return;
     }
     if (observedProjection !== projection) {
-      unsubscribeSelection?.();
+      unsubscribeActiveSessions?.();
       observedProjection = projection;
-      unsubscribeSelection = projection.onSelectionChange(changed);
+      unsubscribeActiveSessions = projection.onActiveSessionChange(changed);
     }
     const sessions = projection.countActiveSessions(params.context.resolveGatewayContext);
     publishGatewayWorkMetrics(
@@ -77,8 +81,8 @@ export function startGatewayWorkMetrics(params: {
       if (unsubscribeSessionChanges) {
         unsubscribeSessionChanges();
         unsubscribeSessionChanges = undefined;
-        unsubscribeSelection?.();
-        unsubscribeSelection = undefined;
+        unsubscribeActiveSessions?.();
+        unsubscribeActiveSessions = undefined;
         observedProjection = undefined;
         if (scheduled) {
           clearImmediate(scheduled);
@@ -88,7 +92,26 @@ export function startGatewayWorkMetrics(params: {
       }
       return;
     }
-    unsubscribeSessionChanges ??= sessionChanges.subscribe(changed);
+    if (!unsubscribeSessionChanges) {
+      let agentRunRevision = readAgentRunIndexVersion();
+      let subagentRevision = getSubagentRegistryPublicationRevision();
+      unsubscribeSessionChanges = sessionChanges.subscribe((change) => {
+        const nextAgentRunRevision = readAgentRunIndexVersion();
+        const nextSubagentRevision = getSubagentRegistryPublicationRevision();
+        // Summary/transcript publications do not change runtime count inputs.
+        if (
+          agentRunRevision === nextAgentRunRevision &&
+          subagentRevision === nextSubagentRevision &&
+          !isSessionStoreTopologyChange(change) &&
+          !("all" in change && change.scope === "config")
+        ) {
+          return;
+        }
+        agentRunRevision = nextAgentRunRevision;
+        subagentRevision = nextSubagentRevision;
+        changed();
+      });
+    }
     if (scheduled) {
       return;
     }
@@ -112,7 +135,7 @@ export function startGatewayWorkMetrics(params: {
     stop: async () => {
       stopped = true;
       unsubscribeSessionChanges?.();
-      unsubscribeSelection?.();
+      unsubscribeActiveSessions?.();
       unsubscribeWorkChanges();
       unsubscribeDemand();
       if (scheduled) {

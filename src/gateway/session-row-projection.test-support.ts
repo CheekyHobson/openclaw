@@ -206,6 +206,7 @@ export function createSessionRowProjectionFixture(params: {
       throw new Error("Active counts require a real session row projection");
     },
     onSelectionChange: revisions.onSelectionChange,
+    onActiveSessionChange: revisions.onActiveSessionChange,
     onFactsChange: revisions.onFactsChange,
     readPreparedRowContext: () => rowContext,
     readPreparedSpawnedBy(query) {
