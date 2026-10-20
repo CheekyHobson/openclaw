@@ -175,7 +175,7 @@ describe("captured session history", () => {
 });
 
 it.skipIf(process.platform === "win32")(
-  "reuses committed diffs across ignored and index churn but refreshes nested attributes",
+  "reuses committed diffs across ignored and index churn but refreshes patch eligibility and attributes",
   async () => {
     vi.stubEnv("GIT_CONFIG_NOSYSTEM", "1");
     vi.stubEnv("GIT_CONFIG_GLOBAL", os.devNull);
@@ -210,6 +210,13 @@ it.skipIf(process.platform === "win32")(
       await git("checkout", "-b", "feature");
       await write("nested/tracked.txt", "before\nafter\n");
       await git("commit", "-am", "feature change");
+      const linked = path.join(tempDirs.make("openclaw-diff-hardlink-"), "linked.txt");
+      await fs.link(path.join(root, "nested/tracked.txt"), linked);
+      const withheld = await read();
+      expect(withheld.files[0]?.truncated).toBe(true);
+      expect(withheld.files[0]?.patch).toBeUndefined();
+      await read(); // Admit the clean committed file's displayed path.
+      await fs.unlink(linked);
       const full = await read();
       expect(full.files[0]?.patch).toContain("+after");
       await read(); // Admit displayed paths' attribute dependencies.

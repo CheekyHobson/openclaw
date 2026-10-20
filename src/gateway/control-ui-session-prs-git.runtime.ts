@@ -235,11 +235,14 @@ async function readCheckoutDiffRevision(
     }
     throw new Error("Checkout diff revision exceeds its metadata budget");
   };
-  const observe = (file: string, allowSymlink = false, target = hash, identityOnly = false) => {
+  const readStat = (file: string) => {
     if (--remaining < 0) {
       oversized();
     }
-    const stat = fs.lstatSync(file, { bigint: true, throwIfNoEntry: false });
+    return fs.lstatSync(file, { bigint: true, throwIfNoEntry: false });
+  };
+  const observe = (file: string, allowSymlink = false, target = hash, identityOnly = false) => {
+    const stat = readStat(file);
     if (stat?.isSymbolicLink() && !allowSymlink) {
       throw new Error("Indirect Git metadata requires a fresh diff");
     }
@@ -433,7 +436,7 @@ async function readCheckoutDiffRevision(
   const index = createHash("sha256");
   const untrackedSet = createHash("sha256");
   const worktreeMtime = createHash("sha256");
-  const paths = new Set(previousPaths);
+  const paths = new Set<string>();
   for (const record of status.stdout.split("\0").filter(Boolean)) {
     if (record.startsWith("# ")) {
       head.update(record).update("\0");
@@ -460,8 +463,15 @@ async function readCheckoutDiffRevision(
       return null;
     }
   }
-  // Committed diffs may have no status entries. Their previous displayed paths
-  // still depend on attributes, including ignored attribute files in parent dirs.
+  // Clean committed previews still depend on file type and hardlink eligibility.
+  for (const file of previousPaths.toSorted()) {
+    if (!paths.has(file)) {
+      const stat = readStat(nodePath.join(root, file));
+      hash.update(JSON.stringify([file, stat?.mode.toString(), stat?.nlink.toString()]));
+      paths.add(file);
+    }
+  }
+  // Displayed paths also depend on ignored attribute files in parent directories.
   const attributes = new Set([nodePath.join(root, ".gitattributes")]);
   for (const file of paths) {
     let directory = nodePath.dirname(nodePath.join(root, file));
