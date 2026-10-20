@@ -116,7 +116,7 @@ describe("panel presentations", () => {
       },
       owner,
     );
-    const host = owner.querySelector("openclaw-panel-empty-state")!;
+    const host = owner.querySelector<HTMLElement>("openclaw-panel-empty-state")!;
     const update = (label: string, data: string) => {
       view.update({
         heading: label,
@@ -173,7 +173,7 @@ describe("panel presentations", () => {
       }),
     );
     flush();
-    const host = view.container.querySelector("openclaw-panel-empty-state")!;
+    const host = view.container.querySelector<HTMLElement>("openclaw-panel-empty-state")!;
     const body = host.querySelector(".empty-state");
     setHeading("No matching files");
     flush();
