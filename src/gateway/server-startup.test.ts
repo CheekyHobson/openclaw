@@ -10,7 +10,8 @@ const refreshPreparedModelRuntimeSnapshotsMock = vi.fn<
   typeof import("../agents/prepared-model-runtime.js").refreshPreparedModelRuntimeSnapshots
 >(async () => {});
 
-vi.mock("../agents/agent-scope.js", () => ({
+vi.mock("../agents/agent-scope.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agents/agent-scope.js")>()),
   listAgentIds: () => ["main", "secondary"],
   resolveAgentDir: (_config: OpenClawConfig, agentId: string) => `/tmp/${agentId}`,
   resolveDefaultAgentDir: () => "/tmp/agent",
