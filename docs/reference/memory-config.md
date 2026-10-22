@@ -521,10 +521,10 @@ auto-injected.
 
 ## Additional memory paths
 
-| Key          | Type                                                                       | Description                              |
-| ------------ | -------------------------------------------------------------------------- | ---------------------------------------- |
-| `extraPaths` | `Array<string \| { path: string; pattern?: string; evergreen?: boolean }>` | Additional directories or files to index |
-| `excludePaths` | `string[]` | Workspace-relative globs omitted from indexing |
+| Key            | Type                                                                       | Description                                    |
+| -------------- | -------------------------------------------------------------------------- | ---------------------------------------------- |
+| `extraPaths`   | `Array<string \| { path: string; pattern?: string; evergreen?: boolean }>` | Additional directories or files to index       |
+| `excludePaths` | `string[]`                                                                 | Workspace-relative globs omitted from indexing |
 
 ```json5
 {

@@ -153,11 +153,13 @@ export class MemoryWatchPolicy {
   }
 
   selectionKeys(group: MemoryObservation): string[] {
-    // Exclusion depends on selections and enabled file kinds, not indexing limits or globs.
+    // A shared watcher baseline must refresh when a subscriber changes which
+    // workspace paths it excludes, even if its scopes are otherwise identical.
     const modalities = this.settings.multimodal.enabled ? this.settings.multimodal.modalities : [];
+    const excludePaths = this.settings.excludePaths ?? [];
     return group.selections.flatMap(({ scope, resolved, lexical, alias }) =>
       ["text", ...modalities].map((modality) =>
-        JSON.stringify([scope, resolved, lexical, alias, modality]),
+        JSON.stringify([scope, resolved, lexical, alias, modality, excludePaths]),
       ),
     );
   }
